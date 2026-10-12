@@ -6,7 +6,29 @@ import sys
 import traceback
 
 
+def no_wmi() -> None:
+    """Keep Python's platform module away from its WMI helper (_wmi.pyd).
+
+    The installed app crashed once at start inside _wmi.pyd (access violation, 2026-10-11 23:23:42, a second or two
+    after the sound library asked platform.system() on a background thread). Nothing here needs WMI: the Windows
+    version comes from sys.getwindowsversion() and the processor type from the environment, which is what platform
+    falls back to. The "ver" command it would also try is switched off too, so no console program is started.
+    """
+    try:
+        import platform
+
+        def refuse(*_a, **_k):
+            raise OSError("not supported")
+
+        platform._wmi_query = refuse
+        platform._syscmd_ver = lambda system="", release="", version="", **_k: (system, release, version)
+        platform.uname()            # worked out once, here on the main thread; later callers get the stored answer
+    except Exception:
+        pass
+
+
 def main() -> int:
+    no_wmi()
     from .config import APP_NAME, AppConfig, data_dir
 
     try:

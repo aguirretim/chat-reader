@@ -34,6 +34,7 @@ MUTATIONS = [
     ("chatreader/controller.py", "            self.ctx.last_speaker = \"\"      # too long ago: say the name again", "            pass",
      "test_name_is_dropped_for_a_quick_follow_up_and_said_again_later"),
     ("chatreader/controller.py", "        self.set_paused(True)\n        self._clear(\"cleared\")", "        self._clear(\"cleared\")", "test_panic_clears_and_stays_silent_until_resume"),
+    ("chatreader/__main__.py", "        platform._wmi_query = refuse\n", "", "test_platform_answers_without_wmi_and_without_starting_a_program"),
 ]
 
 

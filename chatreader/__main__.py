@@ -10,6 +10,14 @@ def main() -> int:
     from .config import APP_NAME, AppConfig, data_dir
 
     try:
+        # Sharp text at 125% and 150%. Must happen before any window exists, including the error box below.
+        import ctypes
+
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        pass
+
+    try:
         from .ui import App, mark
 
         mark("python_started")

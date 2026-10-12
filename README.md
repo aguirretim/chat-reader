@@ -15,9 +15,10 @@ python -m venv .venv
 ## Test, build, check
 
 ```
-.venv\Scripts\python -m pytest -q            # 61 tests, no network, no sound
+.venv\Scripts\python -m pytest -q            # 118 tests, no network, no sound
 .venv\Scripts\python tools\mutation_check.py # breaks each fix in turn; its test must go red
 .venv\Scripts\python tools\audio_check.py    # opens every speaker with silence
+.venv\Scripts\python tools\window_check.py   # the real window with a stand-in controller, every state (shows for 20 s)
 .\build.ps1                                  # dist\ChatReader\ChatReader.exe and dist\ChatReader.zip
 .\tools\av_check.ps1 -Channel <busy channel> # marked zip, shell extract, double-click start, live chat, file fingerprint
 ```

@@ -228,11 +228,11 @@ class Controller:
             strip_markdown_links(event)
             decision = self._cleaner.prepare(event, self.ctx)
         except Exception as exc:  # one odd message must never stop the reader
-            self._log(name, "", "skipped", f"could not be read ({type(exc).__name__})")
+            self._log(name, "", "skipped", f"could not be read ({type(exc).__name__})", login)
             return
         if not decision.speak:
             hidden = decision.reason.startswith(("blocked", "personal"))
-            self._log(name, "" if hidden else raw, "skipped", friendly_reason(decision.reason))
+            self._log(name, "" if hidden else raw, "skipped", friendly_reason(decision.reason), login)
             return
         item = Item(text=cut_at_word(decision.text, self.cfg.max_chars), login=login,
                     message_id=event.get("message_id", ""), raw=raw, name=name)
@@ -243,10 +243,10 @@ class Controller:
     def _on_drop(self, item: Item, reason: str) -> None:
         if item.login and self.ctx.last_speaker == item.login:
             self.ctx.last_speaker = ""  # their line was never heard, so their next one must carry the name again
-        self._log(item.name or item.login, item.raw, "skipped", friendly_reason(reason))
+        self._log(item.name or item.login, item.raw, "skipped", friendly_reason(reason), item.login)
 
-    def _log(self, name: str, text: str, status: str, detail: str = "") -> None:
-        self.events.put(("log", {"t": time.time(), "name": name, "text": text, "status": status, "detail": detail}))
+    def _log(self, name: str, text: str, status: str, detail: str = "", login: str = "") -> None:
+        self.events.put(("log", {"t": time.time(), "name": name, "login": login, "text": text, "status": status, "detail": detail}))
 
     # -- controls ---------------------------------------------------------------
     def _interrupt(self, reason: str) -> None:
@@ -320,11 +320,11 @@ class Controller:
                 if reason == "paused":
                     self.queue.put_back(item)   # read it again from the start after Resume
                 elif reason:
-                    self._log(name, item.raw, "skipped", friendly_reason(reason))
+                    self._log(name, item.raw, "skipped", friendly_reason(reason), item.login)
                 else:
-                    self._log(name, item.raw, "spoken", item.text)
+                    self._log(name, item.raw, "spoken", item.text, item.login)
             except Exception as exc:
-                self._log(name, item.raw, "skipped", f"could not be spoken: {exc}")
+                self._log(name, item.raw, "skipped", f"could not be spoken: {exc}", item.login)
                 self.events.put(("status", f"Sound problem: {exc}"))
                 time.sleep(1.0)  # do not spin if the sound device keeps failing
             finally:

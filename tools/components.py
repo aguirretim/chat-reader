@@ -6,7 +6,7 @@ import sys
 from importlib import metadata
 
 # what PyInstaller bundles for this app (the runtime requirements and their dependencies), not the dev tools
-RUNTIME = ["kokoro-onnx", "onnxruntime", "sounddevice", "pystray", "pillow", "numpy"]
+RUNTIME = ["kokoro-onnx", "onnxruntime", "sounddevice", "pystray", "pillow", "numpy", "ttkbootstrap"]
 NOT_FROM_PIP = [
     ("Python 3.12 runtime + standard library", "PSF License 2.0", "python.org"),
     ("Tcl/Tk 8.6 (window toolkit)", "Tcl/Tk licence (BSD-style)", "bundled with Python"),

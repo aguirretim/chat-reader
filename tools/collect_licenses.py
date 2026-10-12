@@ -26,6 +26,8 @@ copied, without = 0, []
 for dist in list(closure(RUNTIME).values()) + [metadata.distribution("pyinstaller")]:
     name = dist.metadata["Name"]
     found = [f for f in (dist.files or []) if ".dist-info" in str(f) and any(n in f.name.upper() for n in names)]
+    if name == "ttkbootstrap":  # the Bootstrap Icons font it bundles has its own licence file
+        found += [f for f in (dist.files or []) if str(f).replace("\\", "/") == "ttkbootstrap/assets/icons/LICENSE"]
     if name == "onnxruntime":   # keeps its texts inside the package folder
         found += [f for f in (dist.files or []) if str(f).replace("\\", "/") in ("onnxruntime/LICENSE", "onnxruntime/ThirdPartyNotices.txt")]
     if not found:
@@ -35,6 +37,8 @@ for dist in list(closure(RUNTIME).values()) + [metadata.distribution("pyinstalle
         src = Path(dist.locate_file(f))
         parts = Path(str(f)).parts
         inside = parts[1:] if parts[0].endswith(".dist-info") else parts[-1:]      # path below the metadata folder
+        if str(f).replace("\\", "/") == "ttkbootstrap/assets/icons/LICENSE":
+            inside = ("Bootstrap-Icons-LICENSE",)
         rel = Path(*(inside[1:] if inside[0] == "licenses" and len(inside) > 1 else inside))
         dest = pkgs / f"{name}-{dist.version}" / rel
         if dest.exists():

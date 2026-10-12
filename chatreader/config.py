@@ -53,6 +53,7 @@ class AppConfig:
     name_window_s: int = 30        # "Name says" is dropped when the same person writes again within this time
     fetch_emote_lists: bool = True  # asks 7TV / BetterTTV / FrankerFaceZ for the channel's emote names
     hotkeys: bool = True
+    theme: str = "dark"            # dark | light | system (same as Windows)
     low_memory: bool = False       # voice engine arena off: about 170 MB instead of up to 690 MB, about twice the wait
 
     @classmethod
@@ -83,6 +84,8 @@ class AppConfig:
                 ok = isinstance(value, str)
             if ok:
                 setattr(cfg, f.name, value)
+        if cfg.theme not in ("dark", "light", "system"):
+            cfg.theme = "dark"
         cfg.volume = min(100, max(0, cfg.volume))
         cfg.speed = min(1.5, max(0.7, cfg.speed))
         cfg.max_words = min(200, max(5, cfg.max_words))

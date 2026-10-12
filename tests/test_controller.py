@@ -456,3 +456,11 @@ def test_added_bots_are_read_when_skip_bots_is_off(ctl):
     ctl.handle_message(event("thanks for the follow", login="helper_bot9", name="Helper_Bot9", mid="b4"))
     (entry,) = logs(ctl, 1)
     assert entry["status"] == "spoken"
+
+
+def test_log_events_carry_the_login_for_the_window(ctl):
+    ctl.connect("streamer")
+    ctl.handle_message(event("hello there friends", login="pixelmoth", name="PixelMoth", mid="L1"))
+    ctl.handle_message(event("!drops", login="lanternfox", name="LanternFox", mid="L2"))
+    entries = logs(ctl, 2)
+    assert {(e["login"], e["status"]) for e in entries} == {("pixelmoth", "spoken"), ("lanternfox", "skipped")}

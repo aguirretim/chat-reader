@@ -122,7 +122,7 @@ def megabytes(n: int) -> int:
 def window_state(*, voice_error: str = "", ready: bool = False, start_pending: bool = False, status: str = "",
                  paused: bool = False, silenced: bool = False, channel: str = "", waiting: int = 0,
                  stopped_by_user: bool = False, note: str = "", download: tuple[int, int] | None = None,
-                 download_error: str = "") -> State:
+                 download_error: str = "", channel_typed: bool = False) -> State:
     """The one state the window shows. First match wins (spec section 4). `note` replaces the detail line briefly."""
     if voice_error:
         return State("voice_failed", "bad", ICON["warn"], "The voice could not start", voice_error)
@@ -149,6 +149,7 @@ def window_state(*, voice_error: str = "", ready: bool = False, start_pending: b
         return State("paused", "warn", ICON["pause"], "Paused", note or (f"{channel} · {waiting} waiting. {carry_on}" if channel else carry_on))
     if not channel:
         detail = ("Stopped. Press Start reading to go again." if stopped_by_user
+                  else "Press Start reading." if channel_typed
                   else "Type your Twitch channel name, then press Start reading.")
         return State("not_reading", "muted", ICON["stop"], "Not reading", note or detail)
     if "Trying again in" in status:
@@ -160,10 +161,18 @@ def window_state(*, voice_error: str = "", ready: bool = False, start_pending: b
 
 
 # -- list rows ----------------------------------------------------------------
+# Short enough to fit the "What happened" column at every window size (the icon in front already says "not read").
 REWORD = {
     "cleared by you": "skipped by you",
-    "blocked by the safety filter": "blocked word or personal detail",
-    "from the other channel in a shared chat": "from the other shared channel",
+    "blocked by the safety filter": "blocked word",
+    "from the other channel in a shared chat": "other shared channel",
+    "writer was timed out or banned": "writer timed out or banned",
+    "a ! command": "a command (starts with !)",
+}
+# the same reasons in full, for the tooltip
+FULL_REASON = {
+    "blocked by the safety filter": "a blocked word or a personal detail (phone number, e-mail, address)",
+    "from the other channel in a shared chat": "it came from the other channel in a shared chat",
 }
 
 
@@ -184,11 +193,10 @@ def row_view(entry: dict) -> RowView:
     detail = entry.get("detail") or ""
     message = text or "(hidden)"
     if detail.startswith("could not be spoken"):
-        return RowView("fault", ICON["warn"], message, "Not read: sound problem", f"{message}\nNot read: {detail}")
+        return RowView("fault", ICON["warn"], message, "sound problem", f"{message}\nNot read: {detail}")
     if detail.startswith("could not be read"):
-        return RowView("fault", ICON["warn"], message, "Not read: could not be read", f"{message}\nNot read: {detail}")
-    shown = REWORD.get(detail, detail)
-    return RowView("skip", ICON["dash"], message, f"Not read: {shown}", f"{message}\nNot read: {shown}")
+        return RowView("fault", ICON["warn"], message, "could not be read", f"{message}\nNot read: {detail}")
+    return RowView("skip", ICON["dash"], message, REWORD.get(detail, detail), f"{message}\nNot read: {FULL_REASON.get(detail, detail)}")
 
 
 def counters_text(read: int, not_read: int) -> str:
@@ -223,16 +231,43 @@ def speed_text(speed: float) -> str:
     return f"{speed:.1f}x" + ("  normal" if abs(speed - 1.0) < 0.025 else "")
 
 
-def shortcuts_text(version: str, keys: dict) -> str:
-    return (f"Chat Reader {version}. Shortcuts work while your game is in front: {keys['panic']} Silence now, "
-            f"{keys['pause'].rsplit('+', 1)[-1]} Pause or Resume, {keys['skip'].rsplit('+', 1)[-1]} Skip this one, "
-            f"{keys['clear'].rsplit('+', 1)[-1]} Skip all.")
+def shortcuts_text(keys: dict) -> str:
+    """One line, short enough for the narrowest window. The modifier is written once, so F10 is not read as plain F10."""
+    def last(name: str) -> str:
+        return keys[name].rsplit("+", 1)[-1]
+
+    lead = keys["panic"].rsplit("+", 1)[0]
+    return (f"Shortcuts, also in a game: {lead} + {last('panic')} Silence now \u00b7 {last('pause')} Pause or Resume "
+            f"\u00b7 {last('skip')} Skip this one \u00b7 {last('clear')} Skip all")
 
 
-def licence_text() -> str:
+def licence_text(version: str = "") -> str:
+    """One short line for the Settings footer. The full notice is in LICENSE and the README."""
     from . import SOURCE_URL
 
-    return f"Free software under the GNU GPL version 3 or later. Source: {SOURCE_URL}"
+    lead = f"Chat Reader {version} \u00b7 " if version else ""
+    return f"{lead}Free software (GNU GPL version 3 or later) \u00b7 Source: {SOURCE_URL.split('://', 1)[-1]}"
+
+def valid_bot_name(typed: str) -> str:
+    """The login for a typed bot name, or "" when it cannot be a Twitch name (spaces, symbols, too long)."""
+    import re as _re
+
+    from .controller import bot_login
+
+    login = bot_login(typed)
+    return login if _re.fullmatch(r"[a-z0-9_]{1,25}", login) else ""
+
+
+def word_action_label(picked: list[tuple[int, bool]]) -> str:
+    """Button text for the selected rows of the Blocked words table. picked = [(group number, blocked now), ...]"""
+    if picked and all(tier == 0 for tier, _ in picked):
+        return "Remove selected"
+    states = {blocked for tier, blocked in picked if tier != 0}
+    if states == {True}:
+        return "Allow selected"
+    if states == {False}:
+        return "Block selected"
+    return "Allow or block selected"
 
 
 def failed_shortcuts_text(failed: list[str]) -> str:
@@ -283,4 +318,4 @@ def word_count_text(shown_limit: int, total: int) -> str:
 
 
 def allowed_text(n: int) -> str:
-    return f"{n:,} word{'' if n == 1 else 's'} allowed one by one."
+    return "" if n == 0 else f"{n:,} word{'' if n == 1 else 's'} allowed one by one."

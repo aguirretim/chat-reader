@@ -2,7 +2,10 @@
 
 No voice, no sound, no network, no tray, no hotkeys. Settings go to a scratch folder. All names and messages are
 made up. The window has to be on the screen to be drawn (Tk does not paint a window that is off-screen: tried), so it
-shows for about 20 seconds. The keyboard focus is handed straight back to whatever had it.
+shows for about 25 seconds, on the small second monitor from the moment it is created (CR_CHECK_POS, default
++2580+285; that monitor is 1024x600, so the largest size used is 1000x505). It is never maximised, no key presses
+are sent, the keyboard focus is handed straight back to whatever had it, and the run stops (exit code 3) if the
+mouse moves into the window.
 
 Usage: python tools\\window_check.py [--shots <folder>]     exit code 0 = every check passed
 """
@@ -35,7 +38,21 @@ user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
 user32.GetParent.restype = wt.HWND
 user32.GetParent.argtypes = [wt.HWND]
 FOREGROUND = user32.GetForegroundWindow()
-OFFSCREEN = "+120+80"      # on the screen; the name is kept from the first attempt
+POS = os.environ.get("CR_CHECK_POS", "+2580+285")
+BASE_H = 505               # the tallest window that fits the 1024x600 monitor with its caption and the taskbar
+os.environ["CR_WINDOW_POS"] = POS
+
+
+class MouseInWindow(Exception):
+    pass
+
+
+def mouse_inside(window) -> bool:
+    point, rect = wt.POINT(), wt.RECT()
+    user32.GetCursorPos(ctypes.byref(point))
+    hwnd = user32.GetParent(window.winfo_id()) or window.winfo_id()
+    user32.GetWindowRect(wt.HWND(hwnd), ctypes.byref(rect))
+    return rect.left <= point.x < rect.right and rect.top <= point.y < rect.bottom
 results: list[tuple[bool, str, str]] = []
 
 
@@ -123,6 +140,23 @@ def capture(window, path: Path) -> None:
     img.crop((7, 0, w - 7, h - 7)).save(path)
 
 
+def caption_icon_purple(window) -> int:
+    """Purple pixels in the top-left corner of the window as it is on the screen (the caption icon). A real screen
+    grab, because PrintWindow does not draw the caption icon. 0 if another window covers the corner."""
+    from PIL import ImageGrab
+
+    window.update()
+    hwnd = user32.GetParent(window.winfo_id()) or window.winfo_id()
+    rect = wt.RECT()
+    user32.GetWindowRect(wt.HWND(hwnd), ctypes.byref(rect))
+    img = ImageGrab.grab(bbox=(rect.left + 8, rect.top + 2, rect.left + 44, rect.top + 30), all_screens=True).convert("RGB")
+    if SHOTS is not None:
+        SHOTS.mkdir(parents=True, exist_ok=True)
+        img.resize((img.width * 6, img.height * 6)).save(SHOTS / "caption_icon_screen_grab.png")
+    raw = img.tobytes()
+    return sum(1 for i in range(0, len(raw), 3) if abs(raw[i] - 100) < 30 and abs(raw[i + 1] - 65) < 30 and abs(raw[i + 2] - 165) < 35)
+
+
 def shot(app_or_win, name: str) -> None:
     if SHOTS is not None:
         capture(app_or_win, SHOTS / f"{name}.png")
@@ -136,6 +170,9 @@ def bound(window, sequence: str) -> bool:
 
 def pump(app, seconds: float = 0.05) -> None:
     end = time.time() + seconds
+    tops = [app.root] + ([app._words_win.win] if app._words_win is not None and app._words_win.win.winfo_exists() else [])
+    if any(mouse_inside(w) for w in tops):
+        raise MouseInWindow
     while time.time() < end:
         while True:
             try:
@@ -149,12 +186,13 @@ def pump(app, seconds: float = 0.05) -> None:
 
 
 def size(app, w: int, h: int) -> None:
-    app.root.geometry(f"{app.kit.px(w)}x{app.kit.px(h)}{OFFSCREEN}")
+    app.root.geometry(f"{app.kit.px(w)}x{app.kit.px(h)}{POS}")
     pump(app, 0.15)
 
 
 def clipped(widget) -> list[str]:
-    """Texts that do not fit: a label asking for more width than it got, or lying outside its window."""
+    """What does not fit: a label asking for more room than it got, or any control lying partly outside the
+    frame it sits in (that is how a control pushed off the bottom of the Settings page shows up)."""
     import tkinter as tk
 
     out = []
@@ -165,7 +203,15 @@ def clipped(widget) -> list[str]:
         w = stack.pop()
         if not w.winfo_ismapped():
             continue
-        stack.extend(w.winfo_children())
+        stack.extend(c for c in w.winfo_children() if not isinstance(c, tk.Toplevel))
+        m = w.master
+        if w is not top and m is not None and not isinstance(w, tk.Toplevel):
+            over_x = w.winfo_rootx() + w.winfo_width() - (m.winfo_rootx() + m.winfo_width())
+            over_y = w.winfo_rooty() + w.winfo_height() - (m.winfo_rooty() + m.winfo_height())
+            if over_x > 1 or over_y > 1 or w.winfo_rootx() < m.winfo_rootx() - 1 or w.winfo_rooty() < m.winfo_rooty() - 1:
+                label = w.cget("text") if isinstance(w, tk.Label) else ""
+                out.append(f"{type(w).__name__} {str(label)[:30] or str(w).rsplit('.', 2)[-1]} sticks out by {max(over_x, over_y)}")
+                continue
         if isinstance(w, tk.Label) and w.cget("text"):
             too_narrow = not w.cget("wraplength") and w.winfo_reqwidth() > w.winfo_width() + 1
             too_short = w.winfo_reqheight() > w.winfo_height() + 1          # a wrapped hint squeezed by what is below it
@@ -211,7 +257,7 @@ def main() -> int:
     ctl = FakeController(cfg)
     app = ui.App(cfg, controller=ctl, start=False)
     root = app.root
-    root.geometry(f"{app.kit.px(920)}x{app.kit.px(600)}{OFFSCREEN}")
+    root.geometry(f"{app.kit.px(920)}x{app.kit.px(BASE_H)}{POS}")
     if FOREGROUND:
         user32.SetForegroundWindow(FOREGROUND)      # hand the keyboard back to whatever had it
     pump(app, 0.2)
@@ -256,7 +302,15 @@ def main() -> int:
     check("Start reading is the primary button", app.start_btn.variant == "primary" and app.start_btn.text() == "Start reading")
     check("speech buttons enabled", all(b.enabled for b in app.speech_buttons))
     check("Silence now is plain while not reading", app.panic_btn.variant == "plain")
-    check("placeholder shown in the empty channel box", app.hint.winfo_ismapped())
+    check("placeholder shown in the empty channel box, in the readable grey", app.hint.winfo_ismapped() and app.hint.cget("fg") == k.p["muted"])
+    check("M8 the icon file is in the package", bool(ui.icon_file()))
+    purple = caption_icon_purple(root)
+    check("M8 the caption shows the app icon (purple pixels where the icon is)", purple >= 20, f"{purple} purple pixels")
+    app._set_channel_text("demo_channel")
+    pump(app)
+    check("channel typed: the state line says only Press Start reading", app.state_detail.cget("text") == "Press Start reading.")
+    app._set_channel_text("")
+    pump(app)
     shot(root, "dark_02_not_reading_first_run")
 
     # -- wrong channel name -----------------------------------------------------------
@@ -290,8 +344,8 @@ def main() -> int:
     check("time column header", app.log.columns[0]["title"] == "Your PC time")
     check("time is the Windows format with seconds", rows[0]["cells"]["time"] == vm.windows_time(T0) and rows[0]["cells"]["time"].count(":") == 2)
     check("blocked row shows (hidden) and the reworded reason", rows[5]["cells"]["message"] == "(hidden)"
-          and rows[5]["cells"]["result"] == "Not read: blocked word or personal detail")
-    check("sound fault row", rows[10]["cells"]["result"] == "Not read: sound problem" and rows[10]["icon"][1] == "bad")
+          and rows[5]["cells"]["result"] == "blocked word" and "personal detail" in app._row_tip(5))
+    check("sound fault row", rows[10]["cells"]["result"] == "sound problem" and rows[10]["icon"][1] == "bad")
     check("read row: text colour, green tick", rows[2]["tone"] == "text" and rows[2]["icon"] == (vm.ICON["tick"], "ok"))
     check("not-read row: muted", rows[0]["tone"] == "muted" and rows[0]["icon"][1] == "muted")
     check("Clear list enabled", app.clear_btn.enabled)
@@ -358,6 +412,54 @@ def main() -> int:
     # -- follow-newest and jump ----------------------------------------------------------
     feed(app, [(20 + i, f"Viewer{i:02d}", f"viewer{i:02d}", f"made-up message number {i}", "spoken", "") for i in range(40)])
     check("follows the newest row", app.log.at_bottom())
+    # must-fix 1: a shorter window must keep showing the newest row, and keep following
+    size(app, 920, 480)
+    last_bottom = app.log.hh + len(app.log.rows) * app.log.rh - app.log.offset
+    check("M1 after making the window shorter the newest row is still fully in view",
+          app.log.offset == app.log._max_offset() and last_bottom <= app.log.canvas.winfo_height(), f"{app.log.offset} of {app.log._max_offset()}")
+    feed(app, [(60, "PixelMoth", "pixelmoth", "one more after the window got shorter", "spoken", "")])
+    check("M1 and it still follows new chat", app.log.offset == app.log._max_offset() and not app.jump_btn.winfo_ismapped())
+    size(app, 920, BASE_H)
+    check("M1 taller again: still at the newest row", app.log.offset == app.log._max_offset())
+    # must-fix 2: a tooltip stays on the monitor its control is on
+    area = theme.monitor_work_area(root.winfo_rootx() + 50, root.winfo_rooty() + 50)
+    tip = app.pause_btn.tooltip
+    spots = []
+    for at in ((area[2] + 400, area[3] + 400), (area[0] - 900, area[1] - 300)):
+        tip.show(at=at)
+        root.update()
+        x, y = getattr(tip, "last_position", (None, None))
+        inside = x is not None and area[0] <= x and x + tip._tip.winfo_width() <= area[2] and area[1] <= y and y + tip._tip.winfo_height() <= area[3]
+        spots.append(inside)
+        tip.hide()
+    check("M2 a tooltip asked for off the edge is kept on the window's own monitor", all(spots), f"{spots} area {area}")
+    # must-fix 4: keyboard focus can be seen. The focus handlers are called directly: real focus would take Tim's keyboard.
+    p = k.p
+    app.start_btn.set(variant="primary")
+    app.start_btn._focus(True)
+    check("M4 focus on the purple Start reading button: inner ring in the text colour",
+          int(app.start_btn.face.cget("highlightthickness")) >= 2 and app.start_btn.face.cget("highlightbackground") == p["on_accent"]
+          and app.start_btn.cget("bg") == p["accent"])
+    app.start_btn._focus(False)
+    check("M4 the ring goes away again", int(app.start_btn.face.cget("highlightthickness")) == max(1, k.px(1)))
+    app._state_key = None
+    app._refresh()
+    app.say_names.set(True)
+    app.say_names._focus(True)
+    check("M4 focus on a ticked tick box: ring around box and label", app.say_names.cget("bg") == p["accent"] and bound(app.say_names, "<FocusIn>"))
+    app.say_names._focus(False)
+    check("M4 tick box ring goes away", app.say_names.cget("bg") == app.say_names.under)
+    seg = app.colours.buttons[app.colours.value]
+    seg._focus(True)
+    check("M4 focus on the chosen colour: ring has room and an inner line",
+          int(str(seg.cget("padx"))) >= 2 and int(seg.face.cget("highlightthickness")) >= 2 and seg.face.cget("highlightbackground") == p["on_accent"])
+    seg._focus(False)
+    app.log.selected, app.log.anchor = set(), None
+    app.log.set_focused(True)
+    check("M4 focus on the list with no row chosen: ring around the list", bool(app.log.canvas.find_withtag("focusring")) and bound(app.log.canvas, "<FocusIn>"))
+    shot(root, "dark_12b_list_focus_ring")
+    app.log.set_focused(False)
+    check("M4 list ring goes away", not app.log.canvas.find_withtag("focusring"))
     app.log._scroll_to(0)
     feed(app, [(70, "PixelMoth", "pixelmoth", "one more while scrolled up", "spoken", "")])
     check("scrolled up: list does not move, Jump to newest appears", not app.log.at_bottom() and app.jump_btn.winfo_ismapped()
@@ -370,11 +472,14 @@ def main() -> int:
     # -- 200-row limit, midnight ---------------------------------------------------------
     feed(app, [(100 + i, "Viewer01", "viewer01", f"filler {i}", "spoken", "") for i in range(260)])
     check("list keeps the newest 200 rows", sum(1 for r in app.log.rows if r.get("kind") != "date") == 200)
-    check("counters keep counting past 200", app.spoken + app.skipped == 312, str(app.spoken + app.skipped))
+    check("counters keep counting past 200", app.spoken + app.skipped == 313, str(app.spoken + app.skipped))
 
     # -- clear list -----------------------------------------------------------------------
     before = len(ctl.calls)
-    check("Ctrl+L is bound on the main window", bound(root, "<Control-l>"))
+    check("Ctrl+L is bound on the main window, also with Caps Lock", bound(root, "<Control-l>") and bound(root, "<Control-L>"))
+    was_reading = ctl.connected_channel
+    app._channel_enter()
+    check("Enter in the channel box does not stop reading", ctl.connected_channel == was_reading and "disconnect" not in ctl.calls)
     app.clear_list()
     pump(app)
     check("Clear list clears rows and counters", not app.log.rows and app.counts.cget("text") == "" and app.log.empty[0] == "List cleared")
@@ -406,6 +511,13 @@ def main() -> int:
     check("Tab order on Settings starts Back, Voice, Test voice, Play the voice on, Speed",
           got[1:] == [app.back_btn, app.voice, app.test_btn, app.device, app.speed], " > ".join(str(w).rsplit(".", 1)[-1] for w in got))
     shot(root, "dark_15_settings")
+    app.bot_entry.insert(0, "two words;")
+    app._add_bot()
+    pump(app)
+    check("a bot name that cannot be a Twitch name is refused and stays in the box",
+          cfg.extra_bots == ["lanternfox"] and app.bot_entry.get() == "two words;" and "Twitch name" in app.state_detail.cget("text"))
+    app.note = ""
+    app.bot_entry.delete(0, "end")
     app.bot_entry.insert(0, "@Helper_Bot9 ")
     app._add_bot()
     app._remove_bot(0)
@@ -416,7 +528,7 @@ def main() -> int:
     check("empty bots hint", app.bots_empty.winfo_ismapped() and not cfg.extra_bots)
     app.failed_keys = ["Ctrl+Alt+F9"]
     app._show_failed_keys()
-    check("failed shortcut line", app.keys_bad.cget("text") == "Not working because another program uses them: Ctrl+Alt+F9")
+    check("failed shortcut line", app.licence_line.cget("text") == "Not working because another program uses them: Ctrl+Alt+F9")
     shot(root, "dark_16_settings_no_bots_shortcut_taken")
     app.failed_keys = []
     app._show_failed_keys()
@@ -428,36 +540,103 @@ def main() -> int:
     # -- sizes -----------------------------------------------------------------------------
     size(app, 720, 480)
     check("minimum size: nothing clipped on the main view", not clipped(root), ", ".join(clipped(root)))
-    check("narrow: the word Volume is hidden", not app.vol_word.winfo_ismapped() and app.log.columns[3]["width"] == 190)
+    check("narrow: the word Volume is hidden", not app.vol_word.winfo_ismapped() and app.log.columns[3]["width"] == 220
+          and app.log.columns[1]["width"] == 106)
+    # must-fix 3: every reason a message was not read fits the "What happened" column at the smallest window
+    from chatreader.controller import REASONS
+
+    room = app.log.widths()[3] - k.px(14) - k.px(6) - k.px(22)
+    reasons = list(REASONS.values()) + ["blocked by the safety filter", "could not be spoken: x", "could not be read (x)"]
+    shown = [vm.row_view({"status": "skipped", "detail": d, "text": "x"}).result for d in reasons] + ["Read aloud"]
+    cut = [t for t in shown if app.log.fit(t, k.body, room) != t]
+    check("M3 minimum size: all %d results fit their column uncut" % len(shown), not cut, ", ".join(cut))
     visible_rows = (app.log.canvas.winfo_height() - app.log.hh) // app.log.rh
     check("minimum size shows at least 6 rows", visible_rows >= 6, str(visible_rows))
     shot(root, "dark_17_min_720x480")
     app.toggle_settings()
     pump(app, 0.15)
     check("minimum size: nothing clipped on Settings", not clipped(root), ", ".join(clipped(root)))
+    # must-fix 3: the worst case for height: the shortcut warning line showing and several bots added
+    cfg.extra_bots = ["helper_bot_one", "helper_bot_two", "helper_bot_three"]
+    app._render_bots()
+    app.failed_keys = ["Ctrl+Alt+F9", "Ctrl+Alt+F10", "Ctrl+Alt+F11", "Ctrl+Alt+F12"]
+    app._show_failed_keys()
+    pump(app, 0.15)
+    check("the list of added bots starts at the first name and shows all three",
+          app.bots.offset == 0 and not app.bots.pinned and len(app.bots.rows) == 3 and app.bots._max_offset() == 0)
+    cfg.extra_bots = cfg.extra_bots + ["helper_bot_four", "helper_bot_five"]
+    app._render_bots()
+    pump(app, 0.15)
+    check("five bots at the minimum size: the list scrolls and shows a scroll thumb", app.bots._max_offset() > 0 and bool(app.bots.bar.find_all()))
+    cfg.extra_bots = cfg.extra_bots[:3]
+    app._render_bots()
+    pump(app, 0.15)
+    chosen = app.colours.buttons["system"]
+    low_edge = chosen.winfo_rooty() + chosen.winfo_height()
+    check("M3 minimum size, warning line and 3 bots: nothing clipped on Settings", not clipped(root), ", ".join(clipped(root)))
+    check("M3 minimum size, warning line and 3 bots: the theme choice is whole and above the footer",
+          low_edge <= app.licence_line.winfo_rooty() and chosen.winfo_rootx() + chosen.winfo_width() <= root.winfo_rootx() + root.winfo_width(),
+          f"{low_edge} vs {app.licence_line.winfo_rooty()}")
+    check("footer lines are one line each", app.keys_line.winfo_height() <= k.px(22) and app.licence_line.winfo_height() <= k.px(22)
+          and app.licence_line.cget("fg") == k.p["bad"])
+    shot(root, "dark_18b_min_settings_warning_3_bots")
+    cfg.extra_bots, app.failed_keys = [], []
+    app._render_bots()
+    app._show_failed_keys()
+    pump(app)
     low = app.low_hint.winfo_rooty() + app.low_hint.winfo_height()
     check("minimum size: Settings content ends above the shortcuts line", low <= app.keys_line.winfo_rooty() + 1, f"{low} vs {app.keys_line.winfo_rooty()}")
     shot(root, "dark_18_min_settings")
     app.toggle_settings()
     fit = theme.fitted_size(k.px(920), k.px(600), (1024, 560))
     check("opens inside a 1024x600 screen (560 work area)", fit[0] + 16 <= 1024 and fit[1] + 39 <= 560, str(fit))
-    root.geometry(f"{fit[0]}x{fit[1]}{OFFSCREEN}")
+    root.geometry(f"{fit[0]}x{fit[1]}{POS}")
     pump(app, 0.15)
     check("1024x600 fit: nothing clipped", not clipped(root), ", ".join(clipped(root)))
     shot(root, "dark_19_fit_1024x600")
-    size(app, 1500, 700)
+    at_920 = app.log.widths()
+    size(app, 1000, BASE_H)        # the widest that fits this monitor; 1500 wide was checked before the monitor rule
     widths = app.log.widths()
-    check("wide: only the Message column grows", widths[0] == k.px(104) and widths[1] == k.px(136) and widths[3] == k.px(250) and widths[2] > k.px(900))
-    shot(root, "dark_20_wide_1500x700")
-    size(app, 920, 600)
+    check("wider: only the Message column grows", widths[0] == k.px(104) and widths[1] == k.px(136) and widths[3] == k.px(250)
+          and widths[2] - at_920[2] == k.px(80), f"{at_920} > {widths}")
+    shot(root, "dark_20_wide_1000")
+    size(app, 920, BASE_H)
 
     # -- blocked words window ---------------------------------------------------------------
     app.open_blocked_words()
-    pump(app, 0.2)
+    pump(app, 0.3)
     words = app._words_win
-    words.win.geometry(f"{k.px(640)}x{k.px(520)}{OFFSCREEN}")
+    # must-fix 5: it opens over the main window, on the same monitor
+    wx, wy = words.win.winfo_rootx(), words.win.winfo_rooty()
+    area = theme.monitor_work_area(root.winfo_rootx() + 50, root.winfo_rooty() + 50)
+    check("M5 Blocked words opens over the main window, on its monitor",
+          root.winfo_rootx() <= wx <= root.winfo_rootx() + root.winfo_width() and area[0] <= wx and wx + words.win.winfo_width() <= area[2]
+          and area[1] <= wy and wy + words.win.winfo_height() <= area[3], f"at {wx},{wy}; main {root.winfo_rootx()},{root.winfo_rooty()}; area {area}")
+    shot(words.win, "dark_21a_blocked_words_where_it_opens")
+    words.win.geometry(f"{k.px(640)}x{k.px(500)}{POS}")
     pump(app, 0.2)
+    # must-fix 7: the hate-group question has No as its default button
+    from chatreader import wordlist
+
+    asked = {}
+
+    def fake_ask(title, message, **kw):
+        asked.update(kw, message=message)
+        return False
+
+    real_ask, wordlist.messagebox.askyesno = wordlist.messagebox.askyesno, fake_ask
+    words.group_checks[1].set(False)
+    words._group_toggled(1, False)
+    wordlist.messagebox.askyesno = real_ask
+    check("M7 switching the hate group off asks, and No is the default button", asked.get("default") == "no" and "Switch it off?" in asked.get("message", ""), str(asked.get("default")))
+    check("M7 answering No leaves the group on and the box ticked", cfg.block_hate and words.group_checks[1].get())
+    got = tab_order(words.group_checks[1], 12)
+    want = [words.group_checks[1], words.group_checks[2], words.group_checks[3], words.personal, words.find, words.group_pick,
+            words.show, words.table.canvas, words.toggle_btn]
+    check("Blocked words: Tab goes top to bottom", got[:9] == want and got[10] is words.new_word, " > ".join(str(w).rsplit(".", 1)[-1] for w in got))
+    check("Blocked words: no \"0 words allowed\" line", not words.allowed_lbl.winfo_ismapped())
     cells = [r["cells"] for r in words.table.rows[:5]]
+    check("blocked words: the table starts at its first row", words.table.offset == 0)
     check("blocked words: masked by default", all(c["word"].endswith("*") for c in cells) and not words.show.get(), str(cells[0]))
     check("blocked words: status words", {r["cells"]["state"] for r in words.table.rows} == {"Blocked"})
     words.group_pick.current(3)
@@ -479,7 +658,13 @@ def main() -> int:
     words.table.selected = {0}
     words._selection_changed()
     check("blocked words: own word added, button reads Remove selected", cfg.words_added == ["pineapple"] and words.toggle_btn.text() == "Remove selected")
-    words.win.geometry(f"{k.px(560)}x{k.px(420)}{OFFSCREEN}")
+    words.table.selected = {1}
+    words._selection_changed()
+    first = words.toggle_btn.text()
+    words.table.selected = {2}
+    words._selection_changed()
+    check("blocked words: the button says what it will do", (first, words.toggle_btn.text()) == ("Block selected", "Allow selected"), f"{first} / {words.toggle_btn.text()}")
+    words.win.geometry(f"{k.px(560)}x{k.px(420)}{POS}")
     pump(app, 0.2)
     check("blocked words minimum size: nothing clipped", not clipped(words.win), ", ".join(clipped(words.win)))
     shot(words.win, "dark_22_blocked_words_min")
@@ -494,9 +679,19 @@ def main() -> int:
 
     # -- light theme: the whole window is rebuilt, the list is kept ---------------------------
     rows_before = len(app.log.rows)
+    app.open_blocked_words()            # must-fix 6: left open while the colours change
+    pump(app, 0.2)
+    old_words = app._words_win
     app.colours.choose("light")
-    pump(app, 0.3)
-    root.geometry(f"{k.px(920)}x{k.px(600)}{OFFSCREEN}")
+    pump(app, 0.4)
+    now = app._words_win
+    check("M6 an open Blocked words window changes colours with the main window",
+          now is not None and now is not old_words and now.win.winfo_exists() and now.kit.p["window"] == theme.LIGHT["window"]
+          and now.win.cget("bg") == theme.LIGHT["window"] and now.table.canvas.cget("bg") == theme.LIGHT["card"])
+    if now is not None and now.win.winfo_exists():
+        shot(now.win, "light_21a_blocked_words_after_colour_change")
+        now.win.destroy()
+    root.geometry(f"{k.px(920)}x{k.px(BASE_H)}{POS}")
     if FOREGROUND:
         user32.SetForegroundWindow(FOREGROUND)
     pump(app, 0.2)
@@ -520,10 +715,10 @@ def main() -> int:
     pump(app, 0.15)
     check("light minimum main: nothing clipped", not clipped(root), ", ".join(clipped(root)))
     shot(root, "light_17_min_720x480")
-    size(app, 920, 600)
+    size(app, 920, BASE_H)
     app.open_blocked_words()
     pump(app, 0.2)
-    app._words_win.win.geometry(f"{k.px(640)}x{k.px(520)}{OFFSCREEN}")
+    app._words_win.win.geometry(f"{k.px(640)}x{k.px(500)}{POS}")
     pump(app, 0.2)
     shot(app._words_win.win, "light_21_blocked_words")
     app._words_win.win.destroy()
@@ -548,4 +743,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except MouseInWindow:
+        print("STOPPED: the mouse moved into the test window. Nothing was clicked or typed. Run again when it is clear.")
+        os._exit(3)

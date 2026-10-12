@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import threading
 import time
 import tkinter as tk
@@ -26,6 +27,8 @@ DEFAULT_SPEAKER = "Windows default"
 DEFAULT_SIZE = (920, 600)
 MIN_SIZE = (720, 480)
 NARROW_BELOW = 840
+SHORT_BELOW = 560           # below this height the list of added bots shows 3 names instead of 5
+BOT_ROW = 24
 KEYS = {name: label for name, (_, label) in DEFAULT_KEYS.items()}
 TIPS = {
     "pause": "Stops speaking. New messages wait and are read when you press Resume.",
@@ -53,14 +56,31 @@ def make_root():
     import ttkbootstrap as tb
 
     root = tb.Window(title=APP_NAME, high_dpi=True)
-    try:   # the app's own icon in the caption and the taskbar, instead of the library's
-        from PIL import ImageTk
+    set_window_icon(root)
+    return root
 
-        root._app_icons = [ImageTk.PhotoImage(app_icon(size)) for size in (64, 32, 16)]   # kept: Tk does not hold a reference
-        root.iconphoto(True, *root._app_icons)
+
+def icon_file() -> str:
+    """The .ico next to this module (also inside the packaged app), or "" when it is missing."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "app.ico")
+    return path if os.path.isfile(path) else ""
+
+
+def set_window_icon(window) -> None:
+    """The app's own icon in the caption, the taskbar and Alt+Tab. Windows takes the caption icon from an .ico file;
+    a picture handed over with iconphoto was not shown there (the caption kept the generic icon)."""
+    try:
+        path = icon_file()
+        if path:
+            window.iconbitmap(default=path)
+            window.iconbitmap(path)
+        else:
+            from PIL import ImageTk
+
+            window._app_icons = [ImageTk.PhotoImage(app_icon(size)) for size in (64, 32, 16)]   # kept: Tk holds no reference
+            window.iconphoto(True, *window._app_icons)
     except Exception:
         pass
-    return root
 
 
 def app_icon(size: int = 64):
@@ -107,14 +127,18 @@ class App:
         self._state_key = None
         self._state_tooltip = ""
         self._channel_text = cfg.channel
+        self._log_dirty = False
+        self._short = False
         self._built = False
         self._build()
         k = self.kit
         want = theme.fitted_size(k.px(DEFAULT_SIZE[0]), k.px(DEFAULT_SIZE[1]), theme.work_area())
-        self.root.geometry(f"{want[0]}x{want[1]}")
+        place = os.environ.get("CR_WINDOW_POS", "")        # "+x+y", for the scripted checks: open on a chosen monitor
+        self.root.geometry(f"{want[0]}x{want[1]}{place if re.fullmatch(r'[+-]\d+[+-]\d+', place) else ''}")
         self.root.minsize(k.px(MIN_SIZE[0]), k.px(MIN_SIZE[1]))
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
-        self.root.bind("<Control-l>", lambda e: self.clear_list())
+        for key in ("<Control-l>", "<Control-L>"):          # with Caps Lock on, Tk reports the capital letter
+            self.root.bind(key, lambda ev: self.clear_list() if self.view == "list" else None)
         self.root.bind("<Escape>", lambda e: self.show_view("list") if self.view == "settings" else None)
         self.root.bind("<Configure>", self._on_resize)
         theme.set_titlebar(self.root, self.mode == "dark")
@@ -186,9 +210,9 @@ class App:
         self.channel_var = tk.StringVar(value=self._channel_text)
         self.channel = self.tb.Entry(holder, textvariable=self.channel_var, font=k.body)
         self.channel.pack(fill="both", expand=True)
-        self.channel.bind("<Return>", lambda e: self.toggle_connect())
+        self.channel.bind("<Return>", lambda ev: self._channel_enter())
         self.channel_var.trace_add("write", lambda *a: self._channel_edited())
-        self.hint = tk.Label(holder, text="your channel name", font=k.body, bg=p["raised"], fg=p["disabled"], cursor="xterm")
+        self.hint = tk.Label(holder, text="your channel name", font=k.body, bg=p["raised"], fg=p["muted"], cursor="xterm")
         self.hint.bind("<Button-1>", lambda e: self.channel.focus_set())
         self.channel.bind("<FocusIn>", lambda e: self._place_hint(focused=True), add="+")
         self.channel.bind("<FocusOut>", lambda e: self._place_hint(focused=False), add="+")
@@ -213,7 +237,8 @@ class App:
         self.state_word.pack(fill="x")
         self.state_detail = tk.Label(words, text="", font=k.small, bg=p["card"], fg=p["muted"], anchor="w", bd=0, pady=0)
         self.state_detail.pack(fill="x")
-        self.state_tip = Tooltip(k, self.state_detail, lambda: self._state_tooltip)
+        self.state_tips = [Tooltip(k, w, lambda: self._state_tooltip)        # anywhere on the state area, not just the small line
+                           for w in (card, self.state_icon, words, self.state_word, self.state_detail)]
         # shown only while the voice files are downloading / when that failed
         self.progress_track = tk.Frame(card, bg=p["divider"])
         self.progress_fill = tk.Frame(self.progress_track, bg=p["info"])
@@ -265,7 +290,8 @@ class App:
         tk.Label(head, text="Messages", font=k.body_b, bg=p["card"], fg=p["text"]).pack(side="left", padx=(k.px(14), k.px(10)))
         self.counts = tk.Label(head, text="", font=k.small, bg=p["card"], fg=p["muted"])
         self.counts.pack(side="left")
-        self.jump_btn = Button(head, k, "Jump to newest (000 new)", self.jump_to_newest, variant="quiet")
+        self.jump_btn = Button(head, k, "Jump to newest (000 new)", self.jump_to_newest, variant="quiet",
+                               icon=vm.ICON["down"], icon_tone="accent", text_tone="accent")
         self.clear_btn = Button(head, k, "Clear list", self.clear_list, variant="quiet", icon=vm.ICON["bin"], tooltip=TIPS["clear_list"])
         self.clear_btn.pack(side="right", padx=(0, k.px(6)))
         self.log = ListView(card, k, [
@@ -289,14 +315,14 @@ class App:
         self.back_btn = Button(head, k, "Back", lambda: self.show_view("list"), variant="quiet", icon=vm.ICON["back"])
         self.back_btn.pack(side="left")
         tk.Label(head, text="Settings", font=k.title, bg=p["card"], fg=p["text"]).pack(side="left", padx=k.px(8))
-        self.keys_bad = tk.Label(card, text="", font=k.tiny, bg=p["card"], fg=p["bad"], anchor="w")
-        self.keys_line = tk.Label(card, text=vm.shortcuts_text(VERSION, KEYS), font=k.tiny, bg=p["card"], fg=p["muted"],
-                                  anchor="w", justify="left")
+        # Always exactly two footer lines, each short enough for the narrowest window. A wrapped line, or a third line
+        # for the shortcut warning, pushed the theme choice out of sight at the smallest size; the warning now takes
+        # the place of the licence line (which is also in the README and LICENSE).
+        self.keys_line = tk.Label(card, text=vm.shortcuts_text(KEYS), font=k.tiny, bg=p["card"], fg=p["muted"], anchor="w")
         tk.Frame(card, bg=p["card"], height=k.px(6)).pack(side="bottom")
-        self.licence_line = tk.Label(card, text=vm.licence_text(), font=k.tiny, bg=p["card"], fg=p["muted"], anchor="w")
+        self.licence_line = tk.Label(card, text=vm.licence_text(VERSION), font=k.tiny, bg=p["card"], fg=p["muted"], anchor="w")
         self.licence_line.pack(side="bottom", fill="x", padx=k.px(16))
         self.keys_line.pack(side="bottom", fill="x", padx=k.px(16), pady=(k.px(2), 0))
-        self.keys_line.bind("<Configure>", lambda e: self.keys_line.configure(wraplength=max(200, e.width - 4)))
         cols = tk.Frame(card, bg=p["card"])
         cols.pack(fill="both", expand=True, padx=k.px(16), pady=(k.px(2), 0))
         left = tk.Frame(cols, bg=p["card"])
@@ -341,7 +367,7 @@ class App:
         self.device.set(self.cfg.device_name or DEFAULT_SPEAKER)
         self.device.pack(side="left", fill="x", expand=True)
         self.device.bind("<<ComboboxSelected>>", lambda e: self._save())
-        hint(left, "Pick your headphones if viewers should not hear it.").pack(anchor="e")
+        hint(left, "Pick your headphones if viewers should not hear it.").pack(anchor="w")
         r = line(left)
         label(r, "Speed").pack(side="left")
         self.speed = Slider(r, k, 0.7, 1.5, 0.05, self.cfg.speed, 140, self._speed_moved, lambda v: self._save())
@@ -353,7 +379,7 @@ class App:
         section(left, "ADVANCED")
         self.low_memory = Check(left, k, "Use less memory", self.cfg.low_memory, lambda v: self._save())
         self.low_memory.pack(anchor="w")
-        self.low_hint = hint(left, "The voice takes longer to start speaking. Starts the next time you open Chat Reader.")
+        self.low_hint = hint(left, "The voice takes longer to start speaking. Takes effect the next time you open Chat Reader.")
         self.low_hint.configure(wraplength=k.px(310))
         self.low_hint.pack(anchor="w", padx=(k.px(26), 0))
         # -- right: what gets read
@@ -374,12 +400,12 @@ class App:
         self.bot_entry.bind("<Return>", lambda e: self._add_bot())
         self.bot_add.lift()
         self.bots = ListView(right, k, [{"key": "name", "title": "", "width": None, "min": 80},
-                                        {"key": "remove", "title": "", "width": 96, "tone": "accent"}], row_height=22, header_height=1)
-        self.bots.configure(height=k.px(46))
+                                        {"key": "remove", "title": "", "width": 96, "tone": "accent"}], row_height=BOT_ROW, header_height=1)
         self.bots.pack(fill="x", padx=(k.px(2), 0))
         self.bots.pack_propagate(False)
         self.bots.canvas.bind("<ButtonRelease-1>", self._bots_released, add="+")
-        self.bots.canvas.bind("<Delete>", lambda e: self._remove_selected_bot())
+        for key in ("<Delete>", "<Return>", "<space>"):          # the keyboard way to "Remove"
+            self.bots.canvas.bind(key, lambda ev: self._remove_selected_bot())
         self.bots.on_activate = lambda i: None
         self.bots_empty = hint(right, "None yet. Add a name here, or right-click a message in the list.")
         self.bots_empty.configure(wraplength=k.px(270))
@@ -388,7 +414,7 @@ class App:
         self.words_btn.pack(side="left")
         self.groups_lbl = tk.Label(r, text=vm.groups_on(self.cfg), font=k.small, bg=p["card"], fg=p["muted"])
         self.groups_lbl.pack(side="left", padx=k.px(8))
-        section(right, "LOOK")
+        section(right, "THEME")
         r = line(right)
         # no "Colours" label on this row: the section title says it, and label + three choices do not fit 720 wide
         self.colours = Segmented(r, k, [("dark", "Dark"), ("light", "Light"), ("system", "Same as Windows")],
@@ -403,6 +429,8 @@ class App:
         self.settings_view.pack_forget()
         self.list_view.pack_forget()
         (self.settings_view if name == "settings" else self.list_view).pack(fill="both", expand=True)
+        if name == "list":
+            self._flush_list()
         if focus:
             (self.back_btn if name == "settings" else self.settings_btn).focus_set()
 
@@ -419,18 +447,29 @@ class App:
         if narrow != self.narrow:
             self.narrow = narrow
             self._layout_speech_row(narrow)
-            self.log.columns[3]["width"] = 190 if narrow else 250
+            self.log.columns[1]["width"] = 106 if narrow else 136      # Who gives way so every reason fits "What happened"
+            self.log.columns[3]["width"] = 220 if narrow else 250
             self.log.render()
+        short = event.height < self.kit.px(SHORT_BELOW)
+        if short != self._short:
+            self._short = short
+            self._render_bots()
 
     # -- channel box --------------------------------------------------------------
     def _set_channel_text(self, text: str) -> None:
         self.channel.configure(state="normal")
         self.channel_var.set(text)
 
+    def _channel_enter(self) -> None:
+        """Enter in the channel box starts reading. It never stops it: the box is read-only while connected."""
+        if not (self.ctl.connected_channel or self.start_pending):
+            self.toggle_connect()
+
     def _channel_edited(self) -> None:
         self._channel_text = self.channel_var.get()
         self._place_hint()
         self._refresh_empty()
+        self._refresh()
 
     def _place_hint(self, focused: bool | None = None) -> None:
         if focused is not None:
@@ -478,15 +517,24 @@ class App:
 
     def _recolour(self) -> None:
         """Rebuild the window in the other colours. The caption only changes while the window is hidden."""
-        was_iconic = self.root.state() == "iconic"
+        was = self.root.state()
+        words_at = ""
+        if self._words_win is not None and self._words_win.win.winfo_exists():
+            words_at = self._words_win.win.geometry()      # an open Blocked words window would keep the old colours
+            self._words_win.win.destroy()
+        self._words_win = None
         self.root.withdraw()
         self._build()
         theme.set_titlebar(self.root, self.mode == "dark")
         self.root.deiconify()
-        if was_iconic:
-            self.root.iconify()
+        if was in ("iconic", "zoomed"):
+            self.root.state(was)
         if self.view == "settings":
             self.colours.buttons[self.cfg.theme].focus_set()
+        if words_at:
+            self.open_blocked_words()
+            if self._words_win is not None:
+                self._words_win.win.geometry(words_at)
 
     def open_blocked_words(self) -> None:
         if self._words_win is not None and self._words_win.win.winfo_exists():
@@ -501,6 +549,8 @@ class App:
     # -- bots the streamer added ---------------------------------------------------
     def _render_bots(self) -> None:
         names = self.cfg.extra_bots
+        shown = min(len(names), 3 if self._short else 5)       # more names than this scroll
+        self.bots.configure(height=self.kit.px(BOT_ROW * shown + 2))
         self.bots.set_rows([{"cells": {"name": n, "remove": "Remove"}, "tone": "text"} for n in names])
         if names:
             self.bots_empty.pack_forget()
@@ -515,8 +565,14 @@ class App:
         self._render_bots()
 
     def _add_bot(self) -> None:
-        name = self.bot_entry.get().strip().lstrip("@")
-        if name and not vm.is_added_bot(name, self.cfg.extra_bots):
+        typed = self.bot_entry.get().strip()
+        if not typed:
+            return
+        name = typed.lstrip("@")
+        if not vm.valid_bot_name(typed):
+            self._set_note("That does not look like a Twitch name. Use letters, numbers and _ only.", 5)
+            return                                   # the text stays in the box to be corrected
+        if not vm.is_added_bot(name, self.cfg.extra_bots):
             self._set_bots(self.cfg.extra_bots + [name])
         self.bot_entry.delete(0, "end")
 
@@ -565,12 +621,14 @@ class App:
             voice_error=self.voice_error, ready=self.voice_ok and self.audio_ok, start_pending=self.start_pending,
             status=self.problem or self.chat_status, paused=self.ctl.paused, silenced=self.silenced,
             channel=self.ctl.connected_channel, waiting=len(self.ctl.queue), stopped_by_user=self.stopped_by_user,
-            note=self.note, download=self.download, download_error=self.download_error)
+            note=self.note, download=self.download, download_error=self.download_error,
+            channel_typed=bool(self.channel_var.get().strip()))
 
     def _refresh(self) -> None:
         """Bring the state area and every button in line with the controller. Cheap; called from the poll."""
         if not self._built:
             return
+        self._flush_list()
         s = self.current_state()
         ready = self.voice_ok and self.audio_ok
         connected = bool(self.ctl.connected_channel) or self.start_pending
@@ -610,11 +668,7 @@ class App:
 
     def _show_failed_keys(self) -> None:
         text = vm.failed_shortcuts_text(self.failed_keys)
-        self.keys_bad.configure(text=text)
-        if text:
-            self.keys_bad.pack(side="bottom", fill="x", padx=self.kit.px(16), before=self.keys_line)
-        else:
-            self.keys_bad.pack_forget()
+        self.licence_line.configure(text=text or vm.licence_text(VERSION), fg=self.kit.p["bad" if text else "muted"])
 
     # -- events from the controller ------------------------------------------------
     def _audio_ready(self, names: list[str], error: str) -> None:
@@ -731,10 +785,11 @@ class App:
         if vm.date_changed(last_t, entry["t"]):
             item = {"kind": "date", "t": entry["t"]}
             self.entries.append(item)
-            self.log.add_row(self._row(item), follow)
+            self.log.add_row(self._row(item), follow, render=False)    # drawn once per poll, see _flush_list
         item = {"kind": "row", "t": entry["t"], "entry": entry}
         self.entries.append(item)
-        self.log.add_row(self._row(item), follow)
+        self.log.add_row(self._row(item), follow, render=False)
+        self._log_dirty = True
         extra = sum(1 for i in self.entries if i["kind"] == "row") - MAX_LOG_ROWS
         if extra > 0:
             drop = 0
@@ -743,10 +798,15 @@ class App:
                 drop += 1
             del self.entries[:drop]
             self.log.drop_first(drop)
-            self.log.render()
         if not follow:
             self.new_rows += 1
         self._refresh_counts()
+
+    def _flush_list(self) -> None:
+        """Draw the rows added since the last poll: once, and not at all while Settings is showing."""
+        if self._log_dirty and self.view == "list":
+            self._log_dirty = False
+            self.log.render()
 
     def _refresh_counts(self) -> None:
         self.counts.configure(text=vm.counters_text(self.spoken, self.skipped))

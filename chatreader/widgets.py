@@ -63,7 +63,11 @@ class Tooltip:
         tk.Label(tip, text=text, justify="left", bg=k.p["raised"], fg=k.p["text"], font=k.small,
                  padx=k.px(8), pady=k.px(5), wraplength=k.px(460)).pack(padx=1, pady=1)
         tip.update_idletasks()
-        x = max(0, min(x, tip.winfo_screenwidth() - tip.winfo_width() - 4))
+        # stay on the monitor the control is on (Tk only knows the size of the primary one)
+        w = self.widget
+        area = theme.monitor_work_area(w.winfo_rootx() + w.winfo_width() // 2, w.winfo_rooty() + w.winfo_height() // 2)
+        x, y = theme.keep_inside(x, y, tip.winfo_width(), tip.winfo_height(), area)
+        self.last_position = (x, y)
         tip.wm_geometry(f"+{x}+{y}")
 
     def hide(self, _e=None):
@@ -87,11 +91,11 @@ class Button(tk.Frame):
 
     def __init__(self, parent: tk.Misc, kit: Kit, text: str, command: Callable[[], None], variant: str = "plain",
                  icon: str = "", caption: str = "", icon_tone: str = "", min_width: int = 0, height: int = 32,
-                 bold: bool = False, tooltip: str = "", side_pad: int = 12):
+                 bold: bool = False, tooltip: str = "", side_pad: int = 12, text_tone: str = ""):
         self.kit = kit
         self.under = parent.cget("bg")
         super().__init__(parent, bg=self.under, padx=kit.px(2), pady=kit.px(2), takefocus=1, highlightthickness=0)
-        self.command, self.variant, self.icon_tone = command, variant, icon_tone
+        self.command, self.variant, self.icon_tone, self.text_tone = command, variant, icon_tone, text_tone
         self.enabled, self.hovering, self.pressed, self.focused = True, False, False, False
         self.face = tk.Frame(self, highlightthickness=max(1, kit.px(1)), bd=0)
         self.face.pack(fill="both", expand=True)
@@ -205,11 +209,19 @@ class Button(tk.Frame):
         rest = self.under if v == "quiet" else p["raised"]
         fill = p["selected"] if self.pressed else p["hover"] if self.hovering else rest
         border = fill if v == "quiet" else p["border"]
-        return fill, border, p["text"], p["muted"], p[self.icon_tone] if self.icon_tone else p["text"]
+        text = p[self.text_tone] if self.text_tone else p["text"]
+        return fill, border, text, p["muted"], p[self.icon_tone] if self.icon_tone else text
 
     def _paint(self) -> None:
         fill, border, text, caption, icon = self.colours()
-        self.configure(bg=self.kit.p["accent"] if (self.focused and self.enabled) else self.under)
+        ring = self.focused and self.enabled
+        self.configure(bg=self.kit.p["accent"] if ring else self.under)
+        if ring and self.variant in ("primary", "chosen"):
+            # an accent ring around an accent button cannot be seen: add an inner ring in the text-on-accent colour
+            self.face.configure(highlightthickness=max(2, self.kit.px(2)))
+            border = self.kit.p["on_accent"]
+        else:
+            self.face.configure(highlightthickness=max(1, self.kit.px(1)))
         self.face.configure(bg=fill, highlightbackground=border, highlightcolor=border)
         self.inner.configure(bg=fill)
         self.icon_lbl.configure(bg=fill, fg=icon)
@@ -267,6 +279,7 @@ class Check(tk.Frame):
     def _paint(self):
         p, k = self.kit.p, self.kit
         s = k.px(16)
+        self.configure(bg=p["accent"] if self.focused else self.under)    # a ring around box and label, ticked or not
         self.box.delete("all")
         fill = p["accent"] if self.value else (p["hover"] if self.hovering else p["raised"])
         edge = p["accent"] if (self.value or self.focused) else p["border"]
@@ -353,7 +366,6 @@ class Segmented(tk.Frame):
         for key, label in choices:
             b = Button(self, kit, label, lambda k=key: self.choose(k), variant="chosen" if key == value else "plain", side_pad=8)
             b.pack(side="left")
-            b.configure(padx=0)
             self.buttons[key] = b
 
     def choose(self, key: str) -> None:
@@ -371,7 +383,7 @@ class ScrollBar(tk.Canvas):
 
     def __init__(self, parent: tk.Misc, kit: Kit, on_move: Callable[[float], None]):
         self.kit, self.on_move = kit, on_move
-        super().__init__(parent, width=kit.px(12), bd=0, highlightthickness=0, bg=kit.p["card"])
+        super().__init__(parent, width=kit.px(14), bd=0, highlightthickness=0, bg=kit.p["card"])
         self.lo, self.hi, self.hovering, self._grab = 0.0, 1.0, False, None
         self.bind("<Configure>", lambda e: self._paint())
         self.bind("<ButtonPress-1>", self._press)
@@ -409,7 +421,7 @@ class ScrollBar(tk.Canvas):
         top, bottom = self.lo * h, max(self.hi * h, self.lo * h + k.px(24))
         inset = k.px(3)
         self.create_rectangle(inset, top + 2, w - inset, bottom - 2, outline="",
-                              fill=p["border"] if (self.hovering or self._grab is not None) else p["divider"])
+                              fill=p["text"] if (self.hovering or self._grab is not None) else p["border"])
 
 
 # -- list -------------------------------------------------------------------------
@@ -432,6 +444,8 @@ class ListView(tk.Frame):
         self.selected: set[int] = set()
         self.anchor = None
         self.hover = None
+        self.pinned = False       # following the newest row; kept across size changes (set by scrolling, read on resize)
+        self.focused = False
         self.empty = ("", "")
         self.header_tips: dict[str, str] = {}
         self.on_activate: Callable[[int], None] = lambda i: None
@@ -444,7 +458,7 @@ class ListView(tk.Frame):
         self.canvas.pack(side="left", fill="both", expand=True)
         self.bar.pack(side="right", fill="y")
         c = self.canvas
-        c.bind("<Configure>", lambda e: self.render())
+        c.bind("<Configure>", self._resized)
         c.bind("<MouseWheel>", self._wheel)
         c.bind("<Motion>", self._motion)
         c.bind("<Leave>", self._leave)
@@ -454,8 +468,8 @@ class ListView(tk.Frame):
         c.bind("<App>", self._context_key)
         c.bind("<Shift-F10>", self._context_key)
         c.bind("<space>", lambda e: self._activate_selected())
-        c.bind("<FocusIn>", lambda e: self.render())
-        c.bind("<FocusOut>", lambda e: self.render())
+        c.bind("<FocusIn>", lambda e: self.set_focused(True))
+        c.bind("<FocusOut>", lambda e: self.set_focused(False))
         for key, step in (("<Up>", -1), ("<Down>", 1)):
             c.bind(key, lambda e, s=step: self._move(s))
         c.bind("<Prior>", lambda e: self._move(-self._page()))
@@ -466,19 +480,31 @@ class ListView(tk.Frame):
         c.unbind("<Enter>")
         self._tip_after = None
 
+    def set_focused(self, on: bool) -> None:
+        self.focused = on
+        self.render()
+
+    def _resized(self, _event=None) -> None:
+        """A shorter window must not push the newest rows out of sight: stay at the bottom if we were there."""
+        if self.pinned:
+            self.offset = self._max_offset()
+        self.render()
+
     # -- data --------------------------------------------------------------------
     def set_rows(self, rows: list[dict], keep_offset: bool = False) -> None:
         self.rows = rows
         self.selected = {i for i in self.selected if i < len(rows)}
         if not keep_offset:
-            self.offset = 0
+            self.offset, self.pinned = 0, False     # a fresh table starts at its first row
         self.render()
 
-    def add_row(self, row: dict, follow: bool) -> None:
+    def add_row(self, row: dict, follow: bool, render: bool = True) -> None:
         self.rows.append(row)
         if follow:
+            self.pinned = True
             self.offset = self._max_offset()
-        self.render()
+        if render:
+            self.render()
 
     def drop_first(self, n: int) -> None:
         if n <= 0:
@@ -488,13 +514,14 @@ class ListView(tk.Frame):
         self.offset = max(0, self.offset - n * self.rh)
 
     def clear(self) -> None:
-        self.rows, self.selected, self.offset, self.hover = [], set(), 0, None
+        self.rows, self.selected, self.offset, self.hover, self.pinned = [], set(), 0, None, True
         self.render()
 
     def at_bottom(self) -> bool:
-        return self.offset >= self._max_offset() - 1
+        return self.pinned or self.offset >= self._max_offset() - 1
 
     def to_bottom(self) -> None:
+        self.pinned = True
         self.offset = self._max_offset()
         self.render()
 
@@ -550,7 +577,7 @@ class ListView(tk.Frame):
         w, h = c.winfo_width(), c.winfo_height()
         if w < 4 or h < 4:
             return
-        self.offset = max(0, min(self.offset, self._max_offset()))
+        self.offset = self._max_offset() if self.pinned else max(0, min(self.offset, self._max_offset()))
         widths, pad = self.widths(), k.px(14)
         xs = [sum(widths[:i]) for i in range(len(widths))]
         if not self.rows and self.empty[0]:
@@ -560,7 +587,7 @@ class ListView(tk.Frame):
                           justify="center", width=max(100, w - k.px(80)))
         first = self.offset // self.rh
         y = self.hh - (self.offset % self.rh)
-        focused = c.focus_get() is c
+        focused = self.focused
         for i in range(first, len(self.rows)):
             if y >= h:
                 break
@@ -593,6 +620,8 @@ class ListView(tk.Frame):
         c.create_line(0, self.hh - 1, w, self.hh - 1, fill=p["divider"])
         for col, x in zip(self.columns, xs):
             c.create_text(x + pad, self.hh // 2, text=col["title"], font=k.tiny_b, fill=p["muted"], anchor="w")
+        if self.focused:        # the list has the keyboard, also when no row is selected
+            c.create_rectangle(1, 1, w - 2, h - 2, outline=p["accent"], width=2, tags="focusring")
         total = len(self.rows) * self.rh
         view = self._view_height()
         if total <= view or view <= 0:
@@ -603,6 +632,7 @@ class ListView(tk.Frame):
     # -- scrolling ---------------------------------------------------------------
     def _scroll_to(self, offset: int) -> None:
         offset = max(0, min(int(offset), self._max_offset()))
+        self.pinned = offset >= self._max_offset() - 1
         if offset != self.offset:
             self.offset = offset
             self.render()
@@ -618,6 +648,7 @@ class ListView(tk.Frame):
             self.offset = top
         elif top + self.rh > self.offset + self._view_height():
             self.offset = top + self.rh - self._view_height()
+        self.pinned = self.offset >= self._max_offset() - 1
 
     # -- pointer and keys ----------------------------------------------------------
     def _motion(self, e):

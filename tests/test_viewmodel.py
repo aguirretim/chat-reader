@@ -132,12 +132,12 @@ def test_read_row():
 
 
 @pytest.mark.parametrize("detail, shown", [
-    ("a bot", "Not read: a bot"),
-    ("cleared by you", "Not read: skipped by you"),
-    ("skipped by you", "Not read: skipped by you"),
-    ("blocked by the safety filter", "Not read: blocked word or personal detail"),
-    ("from the other channel in a shared chat", "Not read: from the other shared channel"),
-    ("chat was too fast", "Not read: chat was too fast"),
+    ("a bot", "a bot"),
+    ("cleared by you", "skipped by you"),
+    ("skipped by you", "skipped by you"),
+    ("blocked by the safety filter", "blocked word"),
+    ("from the other channel in a shared chat", "other shared channel"),
+    ("chat was too fast", "chat was too fast"),
 ])
 def test_not_read_reasons(detail, shown):
     r = row(detail=detail)
@@ -151,9 +151,9 @@ def test_blocked_row_never_shows_text():
 
 def test_fault_rows_keep_the_raw_error_for_the_tooltip_only():
     r = row(detail="could not be spoken: Error opening OutputStream: Invalid device")
-    assert (r.kind, r.icon, r.result) == ("fault", vm.ICON["warn"], "Not read: sound problem")
+    assert (r.kind, r.icon, r.result) == ("fault", vm.ICON["warn"], "sound problem")
     assert "Invalid device" in r.tooltip
-    assert row(detail="could not be read (ValueError)").result == "Not read: could not be read"
+    assert row(detail="could not be read (ValueError)").result == "could not be read"
 
 
 def test_counters_and_jump_text():
@@ -181,8 +181,8 @@ def test_speed_and_shortcut_lines():
     assert vm.speed_text(1.0) == "1.0x  normal"
     assert vm.speed_text(0.7) == "0.7x" and vm.speed_text(1.5) == "1.5x" and vm.speed_text(1.05) == "1.1x"
     keys = {"panic": "Ctrl+Alt+F9", "pause": "Ctrl+Alt+F10", "skip": "Ctrl+Alt+F11", "clear": "Ctrl+Alt+F12"}
-    line = vm.shortcuts_text("0.1.0", keys)
-    assert "Ctrl+Alt+F9 Silence now, F10 Pause or Resume, F11 Skip this one, F12 Skip all." in line
+    line = vm.shortcuts_text(keys)
+    assert line == "Shortcuts, also in a game: Ctrl+Alt + F9 Silence now · F10 Pause or Resume · F11 Skip this one · F12 Skip all"
     assert vm.failed_shortcuts_text([]) == ""
     assert vm.failed_shortcuts_text(["Ctrl+Alt+F9"]) == "Not working because another program uses them: Ctrl+Alt+F9"
 
@@ -207,6 +207,12 @@ def test_word_status_and_count_lines():
     assert vm.word_count_text(600, 2894) == "Showing the first 600 of 2,894. Type in Find to see fewer."
     assert vm.word_count_text(600, 12) == "12 words" and vm.word_count_text(600, 1) == "1 word"
     assert vm.allowed_text(3) == "3 words allowed one by one." and vm.allowed_text(1) == "1 word allowed one by one."
+    assert vm.allowed_text(0) == ""          # nothing to say, so no line
+    assert vm.word_action_label([]) == "Allow or block selected"
+    assert vm.word_action_label([(1, True), (2, True)]) == "Allow selected"
+    assert vm.word_action_label([(1, False)]) == "Block selected"
+    assert vm.word_action_label([(1, True), (2, False)]) == "Allow or block selected"
+    assert vm.word_action_label([(0, True)]) == "Remove selected"
 
 
 # -- theme --------------------------------------------------------------------------
@@ -282,4 +288,30 @@ def test_download_states():
 
 
 def test_licence_line():
-    assert vm.licence_text() == "Free software under the GNU GPL version 3 or later. Source: https://github.com/aguirretim/chat-reader"
+    assert vm.licence_text() == "Free software (GNU GPL version 3 or later) · Source: github.com/aguirretim/chat-reader"
+    assert vm.licence_text("0.1.0").startswith("Chat Reader 0.1.0 · Free software")
+
+# -- wording added after the UI critique ----------------------------------------------
+def test_every_skip_reason_is_short_and_the_tooltip_keeps_the_full_one():
+    from chatreader.controller import REASONS
+
+    for detail in list(REASONS.values()) + ["blocked by the safety filter"]:
+        r = row(status="skipped", detail=detail)
+        assert not r.result.startswith("Not read") and len(r.result) <= 27, r.result
+        assert "\nNot read: " in r.tooltip
+    assert row(status="skipped", detail="a ! command").result == "a command (starts with !)"
+    assert row(status="skipped", detail="writer was timed out or banned").result == "writer timed out or banned"
+    assert "personal detail" in row(status="skipped", detail="blocked by the safety filter").tooltip
+
+
+def test_not_reading_detail_follows_the_channel_box():
+    kw = dict(voice_error="", ready=True, start_pending=False, status="", paused=False, silenced=False, channel="", waiting=0)
+    assert vm.window_state(**kw).detail == "Type your Twitch channel name, then press Start reading."
+    assert vm.window_state(**kw, channel_typed=True).detail == "Press Start reading."
+    assert vm.window_state(**kw, channel_typed=True, stopped_by_user=True).detail.startswith("Stopped.")
+
+
+def test_bot_names_must_look_like_twitch_names():
+    assert vm.valid_bot_name("@Helper_Bot9 ") == "helper_bot9"
+    for bad in ("two words", "semi;colon", "x" * 26, "", "@"):
+        assert vm.valid_bot_name(bad) == "", bad

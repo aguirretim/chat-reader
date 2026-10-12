@@ -49,6 +49,7 @@ VSVersionInfo(
     --distpath "$app\build\pyi-dist" --workpath "$app\build\pyi-work" --specpath "$app\build" `
     --paths "$app" `
     --add-data "$app\chatreader\textclean\data;chatreader\textclean\data" `
+    --add-data "$app\chatreader\assets;chatreader\assets" `
     --collect-all espeakng_loader `
     --collect-data kokoro_onnx --collect-data phonemizer `
     --hidden-import pystray._win32 `

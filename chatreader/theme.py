@@ -75,6 +75,40 @@ def work_area() -> tuple[int, int]:
     return 1024, 560
 
 
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wt.DWORD), ("rcMonitor", wt.RECT), ("rcWork", wt.RECT), ("dwFlags", wt.DWORD)]
+
+
+def monitor_work_area(x: int, y: int) -> tuple[int, int, int, int]:
+    """(left, top, right, bottom) of the work area of the monitor nearest to a screen point.
+
+    Tk's winfo_screenwidth() knows only the primary monitor, so anything clamped to it jumps to the
+    primary monitor when the window is on another one.
+    """
+    try:
+        user32 = ctypes.windll.user32
+        user32.MonitorFromPoint.restype = wt.HANDLE
+        user32.MonitorFromPoint.argtypes = [wt.POINT, wt.DWORD]
+        user32.GetMonitorInfoW.argtypes = [wt.HANDLE, ctypes.c_void_p]
+        info = _MONITORINFO()
+        info.cbSize = ctypes.sizeof(_MONITORINFO)
+        if user32.GetMonitorInfoW(user32.MonitorFromPoint(wt.POINT(int(x), int(y)), 2), ctypes.byref(info)):   # 2 = nearest
+            r = info.rcWork
+            return r.left, r.top, r.right, r.bottom
+    except Exception:
+        pass
+    w, h = work_area()
+    return 0, 0, w, h
+
+
+def keep_inside(x: int, y: int, w: int, h: int, area: tuple[int, int, int, int], margin: int = 4) -> tuple[int, int]:
+    """Move a w x h box at (x, y) the least distance needed to lie inside the area."""
+    left, top, right, bottom = area
+    x = max(left + margin, min(x, right - w - margin))
+    y = max(top + margin, min(y, bottom - h - margin))
+    return x, y
+
+
 def fitted_size(want_w: int, want_h: int, area: tuple[int, int], frame=(16, 39), margin: int = 16) -> tuple[int, int]:
     """The inside size to open with: the wanted size, shrunk so the whole window fits the work area minus a margin."""
     return (max(200, min(want_w, area[0] - margin - frame[0])), max(200, min(want_h, area[1] - margin - frame[1])))

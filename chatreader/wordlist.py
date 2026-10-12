@@ -56,11 +56,16 @@ class WordListWindow:
         self.win.title("Blocked words")
         self.kit = k = Kit(self.win, theme.palette(mode))
         self.win.configure(bg=k.p["window"])
-        want = theme.fitted_size(k.px(DEFAULT_SIZE[0]), k.px(DEFAULT_SIZE[1]), theme.work_area())
-        self.win.geometry(f"{want[0]}x{want[1]}")
+        # over the main window, on the monitor the main window is on (Windows would put it top-left on the primary one)
+        parent.update_idletasks()
+        area = theme.monitor_work_area(parent.winfo_rootx() + parent.winfo_width() // 2, parent.winfo_rooty() + parent.winfo_height() // 2)
+        want = theme.fitted_size(k.px(DEFAULT_SIZE[0]), k.px(DEFAULT_SIZE[1]), (area[2] - area[0], area[3] - area[1]))
+        x, y = theme.keep_inside(parent.winfo_rootx() + k.px(40), parent.winfo_rooty() + k.px(10),
+                                 want[0] + 16, want[1] + 39, area)
+        self.win.geometry(f"{want[0]}x{want[1]}+{x}+{y}")
         self.win.minsize(k.px(MIN_SIZE[0]), k.px(MIN_SIZE[1]))
         self.win.transient(parent)
-        self.win.bind("<Escape>", lambda e: self.win.destroy())
+        self.win.bind("<Escape>", lambda ev: self.win.destroy())
         self.shown: list[tuple[str, int, str]] = []
         self._build()
         self._refresh()
@@ -96,7 +101,7 @@ class WordListWindow:
         self.personal.pack(side="left")
 
         # bottom-up, so the table takes whatever height is left
-        own = tk.Frame(outer, bg=p["window"])
+        self.own = own = tk.Frame(outer, bg=p["window"])
         own.pack(side="bottom", fill="x", pady=(k.px(6), 0))
         tk.Label(own, text="Add your own word", font=k.body, bg=p["window"], fg=p["text"]).pack(side="left")
         holder = tk.Frame(own, bg=p["window"], width=k.px(200), height=k.px(32))
@@ -106,17 +111,16 @@ class WordListWindow:
         self.new_word.pack(fill="both", expand=True)
         self.new_word.bind("<Return>", lambda e: self._add_own())
         Button(own, k, "Add", self._add_own).pack(side="left")
-        actions = tk.Frame(outer, bg=p["window"])
+        self.actions = actions = tk.Frame(outer, bg=p["window"])
         actions.pack(side="bottom", fill="x", pady=(k.px(4), 0))
         self.toggle_btn = Button(actions, k, "Allow or block selected", self._toggle_selected, min_width=190)
         self.toggle_btn.pack(side="left")
         Button(actions, k, "Block every word again", self._reset_words).pack(side="left", padx=(k.px(4), 0))
         self.allowed_lbl = tk.Label(outer, text="", font=k.small, bg=p["window"], fg=p["muted"], anchor="w")
-        self.allowed_lbl.pack(side="bottom", fill="x")
         self.count_lbl = tk.Label(outer, text="", font=k.small, bg=p["window"], fg=p["muted"], anchor="w")
         self.count_lbl.pack(side="bottom", fill="x", pady=(k.px(4), 0))
 
-        bar = tk.Frame(outer, bg=p["window"])
+        self.bar = bar = tk.Frame(outer, bg=p["window"])
         bar.pack(fill="x", pady=(0, k.px(6)))
         tk.Label(bar, text="Find", font=k.body, bg=p["window"], fg=p["text"]).pack(side="left")
         holder = tk.Frame(bar, bg=p["window"], width=k.px(120), height=k.px(32))
@@ -135,7 +139,7 @@ class WordListWindow:
                           tooltip="The words are hidden so they do not appear on your stream.")
         self.show.pack(side="right")
 
-        box = tk.Frame(outer, bg=p["card"])
+        self.box = box = tk.Frame(outer, bg=p["card"])
         box.pack(fill="both", expand=True)
         self.table = ListView(box, k, [
             {"key": "state", "title": "Status", "width": 150},
@@ -146,7 +150,9 @@ class WordListWindow:
         self.table.pack(fill="both", expand=True)
         self.table.on_activate = lambda i: self._toggle_selected()
         self.table.canvas.bind("<ButtonRelease-1>", lambda e: self._selection_changed(), add="+")
-        self.table.canvas.bind("<KeyRelease>", lambda e: self._selection_changed(), add="+")
+        self.table.canvas.bind("<KeyRelease>", lambda ev: self._selection_changed(), add="+")
+        for part in (bar, box, actions, own):       # Tab goes top to bottom, the way the window reads
+            part.lift()
 
     # -- table --------------------------------------------------------------------
     def _picked_group(self) -> int:
@@ -169,13 +175,17 @@ class WordListWindow:
                                   "group": GROUPS[tier][1] if tier else OWN, "kind": kind}})
         self.table.set_rows(out, keep_offset=True)
         self.count_lbl.configure(text=vm.word_count_text(MAX_ROWS, len(rows)))
-        self.allowed_lbl.configure(text=vm.allowed_text(len(self.cfg.words_off)))
+        allowed = vm.allowed_text(len(self.cfg.words_off))
+        self.allowed_lbl.configure(text=allowed)
+        if allowed:
+            self.allowed_lbl.pack(side="bottom", fill="x", after=self.actions)
+        else:
+            self.allowed_lbl.pack_forget()
         self._selection_changed()
 
     def _selection_changed(self) -> None:
         picked = [self.shown[i] for i in self.table.selection() if i < len(self.shown)]
-        only_own = bool(picked) and all(tier == 0 for _, tier, _ in picked)
-        self.toggle_btn.set(text="Remove selected" if only_own else "Allow or block selected")
+        self.toggle_btn.set(text=vm.word_action_label([(tier, self._status(word, tier)[1]) for word, tier, _ in picked]))
 
     # -- changes ------------------------------------------------------------------
     def _changed(self) -> None:
@@ -183,9 +193,11 @@ class WordListWindow:
         self._refresh()
 
     def _group_toggled(self, tier: int, value: bool) -> None:
+        # No is the default button: Enter or a stray Space must not switch the hate group off
         if tier == 1 and not value and not messagebox.askyesno(
                 "Blocked words", "With this group off, slurs, threats and similar messages can be read aloud on your "
-                                 "stream. You are responsible for what your stream says.\n\nSwitch it off?", parent=self.win):
+                                 "stream. You are responsible for what your stream says.\n\nSwitch it off?",
+                parent=self.win, default="no", icon="warning"):
             self.group_checks[tier].set(True)
             return
         setattr(self.cfg, GROUPS[tier][0], value)

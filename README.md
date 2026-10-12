@@ -3,6 +3,14 @@
 Reads a Twitch channel's chat aloud on Windows with a voice that runs on the PC (Kokoro-82M, ONNX, CPU only).
 No sign-in, no paid service. Version 0.1.0.
 
+![The Chat Reader window reading a chat: each message with its time, who wrote it, and whether it was read aloud](docs/screenshots/main-window.png)
+
+Settings: voice, speaker, speed, which messages get read, and the colour theme.
+
+![The Settings page](docs/screenshots/settings.png)
+
+The channel, names and messages in these pictures are made up (they come from `tools\window_check.py`).
+
 ## Run from source
 
 ```

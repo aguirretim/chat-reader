@@ -7,7 +7,10 @@
 #   5. afterwards: was the process still alive, is every file still there and unchanged, did any security
 #      program open a window, did Windows log anything about it
 # Nothing is excluded from scanning and no security setting is read-write touched.
-param([string] $Channel = 'jerma985', [int] $Seconds = 180, [int] $Launches = 1, [string] $Label = 'av')
+# -Direct starts the exe with CreateProcess instead of ShellExecute. Windows then shows no "Open File - Security
+# Warning" (that dialog belongs to Windows, not to the antivirus, and needs a person to press Run). The files keep
+# their download mark and the antivirus watches the process exactly the same.
+param([string] $Channel = 'jerma985', [int] $Seconds = 180, [int] $Launches = 1, [string] $Label = 'av', [switch] $Direct)
 $ErrorActionPreference = 'Stop'
 $app = Split-Path $PSScriptRoot -Parent
 $dir = "$app\stranger"
@@ -67,7 +70,12 @@ for ($i = 1; $i -le $Launches; $i++) {
     $env:CR_AUTOCONNECT = $Channel; $env:CR_DATA_DIR = "$logDir\data-$Label"
     $winBefore = [WinList]::List() | ForEach-Object { ($_ -split '\|')[0] }
     $t0 = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() / 1000.0
-    Start-Process -FilePath $exe      # ShellExecute, as a double-click
+    if ($Direct) {
+        $psi = New-Object Diagnostics.ProcessStartInfo $exe; $psi.UseShellExecute = $false; $psi.WorkingDirectory = Split-Path $exe
+        [Diagnostics.Process]::Start($psi) | Out-Null
+    } else {
+        Start-Process -FilePath $exe      # ShellExecute, as a double-click
+    }
     # 4
     $deadline = (Get-Date).AddSeconds($Seconds); $proc = $null; $diedAt = $null
     while ((Get-Date) -lt $deadline) {

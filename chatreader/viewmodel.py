@@ -74,6 +74,7 @@ class State:
     word: str
     detail: str = ""
     tooltip: str = ""
+    progress: float | None = None     # 0..1 while the voice files are being downloaded
 
     @property
     def paused_like(self) -> bool:
@@ -106,12 +107,33 @@ def _retry_detail(status: str) -> str:
     return f"Trying again in {n} second{'' if n == 1 else 's'}."
 
 
+DOWNLOAD_PROBLEMS = {
+    "offline": "Check your internet connection, then press Try again. What arrived so far is kept.",
+    "damaged": "The download did not arrive intact. Press Try again.",
+    "disk": "The voice could not be saved on this PC. Free some disk space, then press Try again.",
+}
+
+
+def megabytes(n: int) -> int:
+    """Whole megabytes as Windows shows them (1 MB = 1,048,576 bytes)."""
+    return round(n / 1048576)
+
+
 def window_state(*, voice_error: str = "", ready: bool = False, start_pending: bool = False, status: str = "",
                  paused: bool = False, silenced: bool = False, channel: str = "", waiting: int = 0,
-                 stopped_by_user: bool = False, note: str = "") -> State:
+                 stopped_by_user: bool = False, note: str = "", download: tuple[int, int] | None = None,
+                 download_error: str = "") -> State:
     """The one state the window shows. First match wins (spec section 4). `note` replaces the detail line briefly."""
     if voice_error:
         return State("voice_failed", "bad", ICON["warn"], "The voice could not start", voice_error)
+    if download_error and not ready:
+        return State("voice_download_failed", "bad", ICON["warn"], "The voice could not be downloaded",
+                     DOWNLOAD_PROBLEMS.get(download_error, DOWNLOAD_PROBLEMS["offline"]))
+    if download and not ready and download[0] < download[1]:
+        done, total = download
+        return State("getting_ready", "info", ICON["busy"], f"Getting the voice, {megabytes(done)} of {megabytes(total)} MB",
+                     "This happens once. The voice is then kept on this PC and works without the internet.",
+                     progress=done / total if total else 0.0)
     if not ready:
         detail = ("Reading will start as soon as the voice is ready." if start_pending
                   else "This takes a few seconds each time the app starts.")
@@ -205,6 +227,12 @@ def shortcuts_text(version: str, keys: dict) -> str:
     return (f"Chat Reader {version}. Shortcuts work while your game is in front: {keys['panic']} Silence now, "
             f"{keys['pause'].rsplit('+', 1)[-1]} Pause or Resume, {keys['skip'].rsplit('+', 1)[-1]} Skip this one, "
             f"{keys['clear'].rsplit('+', 1)[-1]} Skip all.")
+
+
+def licence_text() -> str:
+    from . import SOURCE_URL
+
+    return f"Free software under the GNU GPL version 3 or later. Source: {SOURCE_URL}"
 
 
 def failed_shortcuts_text(failed: list[str]) -> str:

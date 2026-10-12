@@ -84,6 +84,8 @@ class App:
         # what the state area is built from
         self.voice_ok = self.audio_ok = False
         self.voice_error = ""
+        self.download: tuple[int, int] | None = None     # (bytes done, bytes total) while the voice files are fetched
+        self.download_error = ""
         self.start_pending = False
         self.chat_status = ""
         self.problem = ""
@@ -212,6 +214,10 @@ class App:
         self.state_detail = tk.Label(words, text="", font=k.small, bg=p["card"], fg=p["muted"], anchor="w", bd=0, pady=0)
         self.state_detail.pack(fill="x")
         self.state_tip = Tooltip(k, self.state_detail, lambda: self._state_tooltip)
+        # shown only while the voice files are downloading / when that failed
+        self.progress_track = tk.Frame(card, bg=p["divider"])
+        self.progress_fill = tk.Frame(self.progress_track, bg=p["info"])
+        self.retry_btn = Button(card, k, "Try again", self.retry_voice, variant="primary")
 
     def _build_speech_row(self, parent) -> None:
         k, p = self.kit, self.kit.p
@@ -287,6 +293,8 @@ class App:
         self.keys_line = tk.Label(card, text=vm.shortcuts_text(VERSION, KEYS), font=k.tiny, bg=p["card"], fg=p["muted"],
                                   anchor="w", justify="left")
         tk.Frame(card, bg=p["card"], height=k.px(6)).pack(side="bottom")
+        self.licence_line = tk.Label(card, text=vm.licence_text(), font=k.tiny, bg=p["card"], fg=p["muted"], anchor="w")
+        self.licence_line.pack(side="bottom", fill="x", padx=k.px(16))
         self.keys_line.pack(side="bottom", fill="x", padx=k.px(16), pady=(k.px(2), 0))
         self.keys_line.bind("<Configure>", lambda e: self.keys_line.configure(wraplength=max(200, e.width - 4)))
         cols = tk.Frame(card, bg=p["card"])
@@ -557,7 +565,7 @@ class App:
             voice_error=self.voice_error, ready=self.voice_ok and self.audio_ok, start_pending=self.start_pending,
             status=self.problem or self.chat_status, paused=self.ctl.paused, silenced=self.silenced,
             channel=self.ctl.connected_channel, waiting=len(self.ctl.queue), stopped_by_user=self.stopped_by_user,
-            note=self.note)
+            note=self.note, download=self.download, download_error=self.download_error)
 
     def _refresh(self) -> None:
         """Bring the state area and every button in line with the controller. Cheap; called from the poll."""
@@ -576,6 +584,16 @@ class App:
         self.state_word.configure(text=s.word)
         self.state_detail.configure(text=s.detail)
         self._state_tooltip = s.tooltip
+        k = self.kit
+        if s.progress is None:
+            self.progress_track.place_forget()
+        else:
+            self.progress_track.place(x=k.px(6), rely=1.0, anchor="sw", relwidth=1.0, width=-k.px(6), height=k.px(4))
+            self.progress_fill.place(x=0, y=0, relheight=1.0, relwidth=max(0.0, min(1.0, s.progress)))
+        if s.kind == "voice_download_failed":
+            self.retry_btn.place(relx=1.0, rely=0.5, anchor="e", x=-k.px(12))
+        else:
+            self.retry_btn.place_forget()
         self.start_btn.set(text="Stop reading" if connected else "Start reading", variant="plain" if connected else "primary")
         self.channel.configure(state="readonly" if connected else "normal")
         for b in self.speech_buttons:
@@ -627,7 +645,19 @@ class App:
         self._refresh()
 
     def handle_event(self, kind: str, data) -> None:
-        if kind == "voice":
+        if kind == "voice_files":
+            if data.get("state") == "downloading":
+                if self.download is None:
+                    mark("voice_download_started", total=data["total"])
+                self.download, self.download_error = (data["done"], data["total"]), ""
+                if data["done"] >= data["total"]:
+                    mark("voice_download_done")
+            elif data.get("state") == "failed":
+                self.download_error = str(data.get("kind") or "offline")
+                mark("voice_download_failed", kind=self.download_error)
+        elif kind == "voice":
+            if data == "loading":
+                self.download_error = ""
             if data == "ready":
                 self.voice_ok = True
                 mark("voice_ready")
@@ -802,6 +832,11 @@ class App:
     def test_voice(self) -> None:
         self.problem = ""
         self.ctl.test_voice()
+
+    def retry_voice(self) -> None:
+        self.download_error = ""
+        self.ctl.retry_voice()
+        self._refresh()
 
     def _on_hotkey(self, name: str) -> None:
         mark("hotkey", key=name)

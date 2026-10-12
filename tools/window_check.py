@@ -57,6 +57,7 @@ class FakeController:
     def skip(self): self.calls.append("skip")
     def clear(self): self.calls.append("clear"); self.queue = []
     def test_voice(self): self.calls.append("test_voice")
+    def retry_voice(self): self.calls.append("retry_voice")
 
     def connect(self, text):
         channel = normalise_channel(text)
@@ -223,6 +224,28 @@ def main() -> int:
     check("Start reading can be pressed while getting ready", app.start_btn.enabled)
     check("empty list says Nothing here yet", app.log.empty[0] == "Nothing here yet")
     shot(root, "dark_01_getting_ready")
+
+    # -- voice files being downloaded (a copy run from source, first start) -----------
+    ctl.events.put(("voice_files", {"state": "downloading", "done": 45_000_000, "total": 120_575_669}))
+    pump(app)
+    check("download: progress in the state area", app.state_word.cget("text") == "Getting the voice, 43 of 115 MB"
+          and app.progress_track.winfo_ismapped(), app.state_word.cget("text"))
+    share = app.progress_fill.winfo_width() / max(1, app.progress_track.winfo_width())
+    check("download: the bar is 37% full", abs(share - 45_000_000 / 120_575_669) < 0.02, f"{share:.3f}")
+    check("download: no Try again button yet", not app.retry_btn.winfo_ismapped())
+    shot(root, "dark_01b_voice_download")
+    ctl.events.put(("voice_files", {"state": "failed", "kind": "offline"}))
+    pump(app)
+    check("download failed: plain message and Try again", app.state_word.cget("text") == "The voice could not be downloaded"
+          and "internet connection" in app.state_detail.cget("text") and app.retry_btn.winfo_ismapped() and not app.progress_track.winfo_ismapped())
+    shot(root, "dark_01c_voice_download_failed")
+    app.retry_btn.invoke()
+    pump(app)
+    check("Try again asks the controller and clears the message", "retry_voice" in ctl.calls and app.state_word.cget("text").startswith("Getting the voice"))
+    ctl.events.put(("voice_files", {"state": "downloading", "done": 120_575_669, "total": 120_575_669}))
+    pump(app)
+    check("download finished: back to plain getting ready, bar gone", app.state_word.cget("text") == "Getting the voice ready..."
+          and not app.progress_track.winfo_ismapped())
 
     # -- ready, first run -----------------------------------------------------------
     app.handle_event("voice", "ready")

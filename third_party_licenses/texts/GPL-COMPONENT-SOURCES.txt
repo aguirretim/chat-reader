@@ -18,4 +18,6 @@ that allows the bundled program to carry any licence
   https://github.com/pyinstaller/pyinstaller
 
 The full licence texts are in this folder: GPL-3.0.txt, LGPL-3.0.txt and the files under packages\.
-This file lists facts about the bundled components. It does not state a licence for Chat Reader itself.
+Chat Reader itself, GPL-3.0-or-later, Copyright (C) 2026 Tim Aguirre
+  https://github.com/aguirretim/chat-reader
+  The source of the exact version you have is the tag with the same version number.

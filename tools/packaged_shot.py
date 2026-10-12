@@ -27,7 +27,10 @@ def visit(hwnd, _):
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     title = ctypes.create_unicode_buffer(200)
     user32.GetWindowTextW(hwnd, title, 200)
-    if pid.value == proc.pid and user32.IsWindowVisible(hwnd) and title.value == "Chat Reader":
+    rect = wt.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    big = rect.right - rect.left > 300 and rect.bottom - rect.top > 200      # not the small helper windows Tk also titles
+    if pid.value == proc.pid and user32.IsWindowVisible(hwnd) and title.value == "Chat Reader" and big:
         found.append(hwnd)
     return True
 

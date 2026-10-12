@@ -1,6 +1,6 @@
 """List every third-party component the build contains, with the licence its own package metadata declares.
 GPL and LGPL components are listed first. Usage: components.py <out.txt>
-The licence of Chat Reader itself is NOT decided here; this file is the input for that decision.
+Chat Reader itself is GPL-3.0-or-later (decided 2026-10-11); this list shows what that choice rests on.
 """
 import sys
 from importlib import metadata
@@ -66,6 +66,7 @@ if __name__ == "__main__":
     lines += [f"  {n} {v}: {lic}".replace("  :", ":") for n, v, lic in sorted(copyleft, key=lambda r: r[0].lower())]
     lines += ["", "Other components:"]
     lines += [f"  {n} {v}: {lic}" for n, v, lic in sorted(other, key=lambda r: r[0].lower())]
-    lines += ["", "The licence of Chat Reader itself has not been chosen. That decision is the author's, before any copy is given to someone else."]
+    lines += ["", "Chat Reader itself: Copyright (C) 2026 Tim Aguirre, GPL-3.0-or-later (LICENSE.txt in the program folder).",
+              "Source code: https://github.com/aguirretim/chat-reader"]
     open(sys.argv[1], "w", encoding="utf-8").write("\n".join(lines) + "\n")
     print(f"{len(rows)} components listed, {len(copyleft)} GPL/LGPL")

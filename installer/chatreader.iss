@@ -13,11 +13,15 @@ AppName=Chat Reader
 AppVersion={#AppVersion}
 AppVerName=Chat Reader {#AppVersion}
 AppPublisher=Chat Reader project
+AppCopyright=Copyright (C) 2026 Tim Aguirre
+AppPublisherURL=https://github.com/aguirretim/chat-reader
+AppSupportURL=https://github.com/aguirretim/chat-reader
 VersionInfoVersion={#AppVersion}
 VersionInfoProductName=Chat Reader
 VersionInfoProductVersion={#AppVersion}
 VersionInfoDescription=Chat Reader Setup
 VersionInfoCompany=Chat Reader project
+VersionInfoCopyright=Copyright (C) 2026 Tim Aguirre. Free software under the GNU GPL version 3 or later.
 SetupIconFile={#IconFile}
 UninstallDisplayIcon={app}\ChatReader.exe
 UninstallDisplayName=Chat Reader
@@ -40,6 +44,13 @@ CloseApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Messages]
+; The licence is stated, not asked about: the GPL is not a contract a person has to accept in order to run a
+; program, so there is no "I accept" page. It is named on the first and the last page, and installed as LICENSE.txt.
+SelectTasksLabel2=Chat Reader is free software under the GNU General Public License, version 3 or later. It comes with no warranty.%n%nSelect anything else Setup should do while installing [name], then click Next.
+FinishedLabel=Setup has finished installing [name].%n%n[name] is free software under the GNU GPL version 3 or later. The licence is in the program folder (LICENSE.txt) and the source code is at https://github.com/aguirretim/chat-reader
+FinishedLabelNoIcons=Setup has finished installing [name].%n%n[name] is free software under the GNU GPL version 3 or later. The licence is in the program folder (LICENSE.txt) and the source code is at https://github.com/aguirretim/chat-reader
 
 [Tasks]
 Name: "desktopicon"; Description: "Put a shortcut on the desktop"; Flags: unchecked

@@ -35,6 +35,7 @@ VSVersionInfo(
       StringStruct('FileDescription', 'Chat Reader - reads Twitch chat aloud'),
       StringStruct('FileVersion', '$ver'),
       StringStruct('InternalName', 'ChatReader'),
+      StringStruct('LegalCopyright', 'Copyright (C) 2026 Tim Aguirre. Free software under the GNU GPL version 3 or later.'),
       StringStruct('OriginalFilename', 'ChatReader.exe'),
       StringStruct('ProductName', 'Chat Reader'),
       StringStruct('ProductVersion', '$ver')])]),
@@ -64,6 +65,7 @@ Copy-Item "$app\third_party_licenses" "$out\licenses" -Recurse
 & $py "$app\tools\collect_licenses.py" "$out\licenses"
 if ($LASTEXITCODE -ne 0) { throw "a licence text is missing (collect_licenses.py)" }
 Copy-Item "$app\README.txt" $out
+Copy-Item "$app\LICENSE" "$out\LICENSE.txt"
 
 Compress-Archive -Path $out -DestinationPath "$app\dist\ChatReader.zip" -CompressionLevel Optimal
 $files = Get-ChildItem $out -Recurse -File

@@ -265,3 +265,21 @@ def test_theme_setting_survives_a_save_and_a_bad_value_loads_as_dark(tmp_path, m
     assert AppConfig.load().theme == "dark"
     (config.data_dir() / "settings.json").write_text(json.dumps({"channel": "demo"}), "utf-8")   # a file from before this setting
     assert AppConfig.load().theme == "dark" and AppConfig.load().channel == "demo"
+
+
+def test_download_states():
+    s = vm.window_state(ready=False, download=(45_000_000, 120_575_669))
+    assert (s.kind, s.tone, s.word) == ("getting_ready", "info", "Getting the voice, 43 of 115 MB")
+    assert abs(s.progress - 0.3732) < 0.001
+    failed = vm.window_state(ready=False, download=(45_000_000, 120_575_669), download_error="offline")
+    assert (failed.kind, failed.tone, failed.word) == ("voice_download_failed", "bad", "The voice could not be downloaded")
+    assert "internet connection" in failed.detail and failed.progress is None
+    assert "did not arrive intact" in vm.window_state(ready=False, download_error="damaged").detail
+    assert "disk space" in vm.window_state(ready=False, download_error="disk").detail
+    done = vm.window_state(ready=False, download=(120_575_669, 120_575_669))
+    assert done.word == "Getting the voice ready..." and done.progress is None
+    assert vm.window_state(ready=True, download=(1, 2), download_error="offline").kind == "not_reading"   # once ready, old download news is ignored
+
+
+def test_licence_line():
+    assert vm.licence_text() == "Free software under the GNU GPL version 3 or later. Source: https://github.com/aguirretim/chat-reader"

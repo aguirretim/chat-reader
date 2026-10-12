@@ -32,9 +32,14 @@ IF WINDOWS OR YOUR ANTIVIRUS WARNS
   click More info, then Run anyway. Keep the whole folder together; the program
   needs the files next to it.
 
-LICENCES
-  This is a private test build. It has not been released under any licence yet.
+LICENCE
+  Chat Reader, Copyright (C) 2026 Tim Aguirre.
+  This program is free software: you can redistribute it and/or modify it under
+  the terms of the GNU General Public License, version 3 or (at your option) any
+  later version. It comes with NO WARRANTY. The full text is in LICENSE.txt.
+  Source code: https://github.com/aguirretim/chat-reader
+
   The voice is Kokoro-82M v1.0 (Apache-2.0), run with ONNX Runtime (MIT) through
-  kokoro-onnx (MIT). Pronunciation uses espeak-ng and phonemizer, which are
-  GPL-3.0; that matters before a copy is given to anyone else. Every bundled
-  component and its licence is listed in licenses\COMPONENTS.txt.
+  kokoro-onnx (MIT). Pronunciation uses espeak-ng and phonemizer (GPL-3.0).
+  Every bundled component, its licence and where its source is published are
+  listed in the licenses folder (start with COMPONENTS.txt).

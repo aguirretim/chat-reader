@@ -29,3 +29,21 @@ creatisbot
 buttsbot
 frostytoolsdotcom
 streamholics
+# Seen posting in the 2026-10-11 capture (52 messages in one channel), no badge.
+streamlootsbot
+# More well-known service accounts, added 2026-10-11 at Tim's request (names from memory, not re-verified).
+playwithviewersbot
+streamcaptainbot
+thepositivebot
+stay_hydrated_bot
+lolrankbot
+rainmaker
+vivbot
+supibot
+titlechange_bot
+tipeeebot
+schnozebot
+streamroutine_bot
+mirrobot
+mtgbot
+ai_licia

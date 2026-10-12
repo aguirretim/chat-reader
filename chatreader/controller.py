@@ -83,6 +83,8 @@ class Controller:
         self._current: Item | None = None
         self._lock = threading.Lock()
         self._voice_ready = threading.Event()
+        self._voice_loading = threading.Event()
+        self._last_progress = 0.0
         # A delete or a clear can arrive in the instant between "taken from the line" and "now speaking";
         # these records close that gap.
         self._deleted_ids: deque[str] = deque(maxlen=500)
@@ -102,20 +104,41 @@ class Controller:
         self._shutdown.set()
         self.disconnect()
 
+    def retry_voice(self) -> None:
+        """Try again after the voice files could not be downloaded (the window's Try again button)."""
+        if not self._voice_ready.is_set() and not self._voice_loading.is_set():
+            threading.Thread(target=self._load_voice, daemon=True, name="voice-load").start()
+
+    def _download_progress(self, done: int, total: int) -> None:
+        now = time.time()
+        if done >= total or now - self._last_progress >= 0.2:       # five updates a second are plenty for a bar
+            self._last_progress = now
+            self.events.put(("voice_files", {"state": "downloading", "done": done, "total": total}))
+
     def _load_voice(self) -> None:
+        self._voice_loading.set()
         self.events.put(("voice", "loading"))
         try:
             if self._cleaner is None:
                 self._cleaner = Cleaner()
             self._apply_blocklist()
             if self._engine is None:
+                from . import voicefiles
                 from .tts import KokoroEngine
 
-                self._engine = KokoroEngine(models_dir(), low_memory=self.cfg.low_memory)
+                try:
+                    folder = voicefiles.ensure(self._download_progress, self._shutdown)
+                except voicefiles.VoiceFilesError as exc:
+                    if exc.kind != "stopped":
+                        self.events.put(("voice_files", {"state": "failed", "kind": exc.kind}))
+                    return
+                self._engine = KokoroEngine(folder, low_memory=self.cfg.low_memory)
             self._engine.load()
         except Exception as exc:
             self.events.put(("voice", f"error: {exc}"))
             return
+        finally:
+            self._voice_loading.clear()
         self._voice_ready.set()
         self.events.put(("voice", "ready"))
 

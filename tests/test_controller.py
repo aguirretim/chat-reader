@@ -435,3 +435,24 @@ def test_emote_names_match_whole_tokens_and_exact_case(ctl):
     logs(ctl, 1)
     said = ctl._engine.said[-1][0].lower()
     assert "please clap for the clapper" in said and "omegalul" not in said and not said.rstrip().endswith("clap")
+
+def test_a_name_added_to_the_bot_list_is_not_read(ctl):
+    ctl.cfg.extra_bots = ["@Helper_Bot9 ", "https://twitch.tv/OtherBot", ""]
+    ctl.apply_config()
+    ctl.connect("streamer")
+    ctl.handle_message(event("thanks for the follow", login="helper_bot9", name="Helper_Bot9", mid="b1"))
+    ctl.handle_message(event("new video is out", login="otherbot", name="OtherBot", mid="b2"))
+    ctl.handle_message(event("hello there", login="viewer7", name="Viewer7", mid="b3"))
+    entries = logs(ctl, 3)
+    assert [e["status"] for e in entries] == ["skipped", "skipped", "spoken"]
+    assert entries[0]["detail"] == "a bot" and entries[1]["detail"] == "a bot"
+
+
+def test_added_bots_are_read_when_skip_bots_is_off(ctl):
+    ctl.cfg.extra_bots = ["helper_bot9"]
+    ctl.cfg.skip_bots = False
+    ctl.apply_config()
+    ctl.connect("streamer")
+    ctl.handle_message(event("thanks for the follow", login="helper_bot9", name="Helper_Bot9", mid="b4"))
+    (entry,) = logs(ctl, 1)
+    assert entry["status"] == "spoken"

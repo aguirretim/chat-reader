@@ -50,6 +50,11 @@ def cut_at_word(text: str, limit: int) -> str:
     return (cut[: cut.rfind(" ")] if " " in cut[limit // 2:] else cut).rstrip(" ,;:")
 
 
+def bot_login(name: str) -> str:
+    """A name as a streamer types it ("@Some_Bot ", a channel address) -> the login Twitch sends ("some_bot")."""
+    return name.strip().lower().rsplit("/", 1)[-1].lstrip("@").strip()
+
+
 def friendly_reason(reason: str) -> str:
     if reason.startswith(("blocked", "personal")):
         return "blocked by the safety filter"
@@ -121,6 +126,7 @@ class Controller:
         s.block_tier2 = s.block_tier3 = True   # the groups are switched in _apply_blocklist, not by a tier ceiling
         s.block_personal_details = self.cfg.block_personal
         s.skip_bots = self.cfg.skip_bots
+        s.extra_bots = frozenset(filter(None, (bot_login(n) for n in self.cfg.extra_bots)))
         self._apply_blocklist()
         s.max_words = self.cfg.max_words
         self.queue.max_pending = self.cfg.max_pending

@@ -45,6 +45,7 @@ class AppConfig:
     words_off: list = field(default_factory=list)     # single blocked words the streamer switched off
     words_added: list = field(default_factory=list)   # the streamer's own blocked words
     skip_bots: bool = True
+    extra_bots: list = field(default_factory=list)    # names the streamer added to the bot list
     max_words: int = 40
     max_chars: int = 150           # spoken text is cut at a word boundary after this many characters
     max_pending: int = 6

@@ -24,6 +24,7 @@ class Settings:
 
     # who and what is skipped
     skip_bots: bool = True
+    extra_bots: frozenset = frozenset()   # logins the streamer added to the bot list
     skip_commands: bool = True            # messages starting with "!"
     skip_own_messages: bool = True
     skip_shared_chat: bool = True         # messages from the other channel in a shared chat
@@ -145,7 +146,7 @@ class Cleaner:
             return Decision(False, "", reason, tier, tuple(notes))
 
         # 1. who
-        if s.skip_bots and (login in self.bots or any(b.get("set_id") == "bot-badge" for b in message.get("badges") or ())):
+        if s.skip_bots and (login in self.bots or login in s.extra_bots or any(b.get("set_id") == "bot-badge" for b in message.get("badges") or ())):
             return skip("bot")
         if login and login in ctx.ignored_users:
             return skip("ignored_user")

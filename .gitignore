@@ -9,3 +9,5 @@ __pycache__/
 .pytest_cache/
 build.log
 
+tools/innosetup/
+tools/_dl/

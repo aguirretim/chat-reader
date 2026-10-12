@@ -1,10 +1,18 @@
 # Build the double-click package: dist\ChatReader\ChatReader.exe (PyInstaller one-folder) and dist\ChatReader.zip.
 # Needs only the project's own .venv (pip install -r requirements.txt -r requirements-dev.txt).
+#   build.ps1                  the folder and the zip (as before)
+#   build.ps1 -Installer       the same, then dist\ChatReader-Setup-<version>.exe
+#   build.ps1 -InstallerOnly   only the installer, from the dist\ChatReader folder that is already there
+#                              (reads the folder, changes nothing in it, so it is safe while the app is running)
+# The installer needs Inno Setup in tools\innosetup (a portable copy; see installer\README.md).
+param([switch] $Installer, [switch] $InstallerOnly)
 $ErrorActionPreference = 'Stop'
 $app = $PSScriptRoot
 $py  = "$app\.venv\Scripts\python.exe"
 $out = "$app\dist\ChatReader"
 $sw  = [Diagnostics.Stopwatch]::StartNew()
+
+if (-not $InstallerOnly) {
 
 # Never replace the folder under a running copy: on 2026-10-11 a rebuild deleted 1,370 files out from under
 # the app while it was in use (the locked exe and DLLs survived; the rest had to be restored from the zip).
@@ -57,3 +65,17 @@ Copy-Item "$app\README.txt" $out
 Compress-Archive -Path $out -DestinationPath "$app\dist\ChatReader.zip" -CompressionLevel Optimal
 $files = Get-ChildItem $out -Recurse -File
 "built ChatReader $ver in {0:N0} s: {1} files, {2:N1} MB unpacked, zip {3:N1} MB" -f $sw.Elapsed.TotalSeconds, $files.Count, (($files | Measure-Object Length -Sum).Sum / 1e6), ((Get-Item "$app\dist\ChatReader.zip").Length / 1e6)
+}
+
+if ($Installer -or $InstallerOnly) {
+    $iscc = "$app\tools\innosetup\ISCC.exe"
+    if (-not (Test-Path $iscc)) { throw "Inno Setup is not in tools\innosetup. See installer\README.md." }
+    if (-not (Test-Path "$out\ChatReader.exe")) { throw "dist\ChatReader is missing. Run build.ps1 without -InstallerOnly first." }
+    if (-not (Test-Path "$app\build\chatreader.ico")) { & $py "$app\tools\make_icon.py" "$app\build\chatreader.ico" }
+    $exeVer = (Get-Item "$out\ChatReader.exe").VersionInfo.ProductVersion   # the installer carries the version of the exe it wraps
+    $swi = [Diagnostics.Stopwatch]::StartNew()
+    & $iscc /Qp "/DAppVersion=$exeVer" "/DSourceDir=$out" "/DOutDir=$app\dist" "/DIconFile=$app\build\chatreader.ico" "$app\installer\chatreader.iss"
+    if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed ($LASTEXITCODE)" }
+    $setup = Get-Item "$app\dist\ChatReader-Setup-$exeVer.exe"
+    "built {0} in {1:N0} s: {2:N1} MB, sha256 {3}" -f $setup.Name, $swi.Elapsed.TotalSeconds, ($setup.Length / 1e6), (Get-FileHash $setup.FullName -Algorithm SHA256).Hash
+}

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 APP_NAME = "Chat Reader"
@@ -38,7 +38,12 @@ class AppConfig:
     volume: int = 80               # 0..100
     speed: float = 1.0             # 0.7..1.5
     say_names: bool = True
+    block_hate: bool = True        # slurs, threats, harassment, self-harm, content about minors
+    block_strong: bool = True      # strong swearing and explicit sexual words
     block_mild_swearing: bool = False
+    block_personal: bool = True    # phone numbers, e-mail and street addresses, IP addresses
+    words_off: list = field(default_factory=list)     # single blocked words the streamer switched off
+    words_added: list = field(default_factory=list)   # the streamer's own blocked words
     skip_bots: bool = True
     max_words: int = 40
     max_chars: int = 150           # spoken text is cut at a word boundary after this many characters
@@ -71,6 +76,8 @@ class AppConfig:
             elif isinstance(default, float):
                 ok = isinstance(value, (int, float)) and not isinstance(value, bool)
                 value = float(value) if ok else value
+            elif isinstance(default, list):
+                ok = isinstance(value, list) and all(isinstance(v, str) for v in value)
             else:
                 ok = isinstance(value, str)
             if ok:

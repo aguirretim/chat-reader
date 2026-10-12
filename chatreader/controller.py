@@ -84,6 +84,8 @@ class Controller:
         self._removed_users: dict[str, float] = {}
         self._cleared_at = 0.0
         self._last_speaker_at = 0.0
+        self._full_blocklist = None             # the complete built-in list; the cleaner works on a filtered copy
+        self._blocklist_key = None
         self.apply_config()
 
     # -- life cycle -------------------------------------------------------------
@@ -100,6 +102,7 @@ class Controller:
         try:
             if self._cleaner is None:
                 self._cleaner = Cleaner()
+            self._apply_blocklist()
             if self._engine is None:
                 from .tts import KokoroEngine
 
@@ -115,11 +118,36 @@ class Controller:
     def apply_config(self) -> None:
         s = self.ctx.settings
         s.say_name = self.cfg.say_names
-        s.block_tier3 = self.cfg.block_mild_swearing
+        s.block_tier2 = s.block_tier3 = True   # the groups are switched in _apply_blocklist, not by a tier ceiling
+        s.block_personal_details = self.cfg.block_personal
         s.skip_bots = self.cfg.skip_bots
+        self._apply_blocklist()
         s.max_words = self.cfg.max_words
         self.queue.max_pending = self.cfg.max_pending
         self.queue.max_age_s = float(self.cfg.max_age_s)
+
+    def _apply_blocklist(self) -> None:
+        """Give the cleaner a word list without the groups and words the streamer switched off."""
+        full = getattr(self._cleaner, "blocklist", None)
+        if full is None or not hasattr(full, "filtered"):
+            return  # still loading, or a test double
+        if self._full_blocklist is None:
+            self._full_blocklist = full
+        c = self.cfg
+        key = (c.block_hate, c.block_strong, c.block_mild_swearing, tuple(c.words_off), tuple(c.words_added))
+        if key == self._blocklist_key:
+            return
+        off_tiers = [t for t, on in ((1, c.block_hate), (2, c.block_strong), (3, c.block_mild_swearing)) if not on]
+        active = self._full_blocklist.filtered(off_tiers, c.words_off)
+        for word in c.words_added:
+            active.add(word)
+        self._cleaner.blocklist = active
+        self._blocklist_key = key
+
+    def blocked_words(self) -> list[tuple[str, int, str]] | None:
+        """Every word on the built-in list as (word, group 1-3, kind); None while the list is still loading."""
+        self._apply_blocklist()
+        return None if self._full_blocklist is None else self._full_blocklist.entries()
 
     # -- chat -------------------------------------------------------------------
     def connect(self, channel_text: str) -> bool:

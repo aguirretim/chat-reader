@@ -45,6 +45,7 @@ class Blocklist:
         self._raw: list[tuple[str, int, str]] = []
         self._allow: set[str] = set()
         self._allow_phrases: set[tuple[str, ...]] = set()
+        self._entries: list[tuple[str, int, str, str]] = []   # (form, tier, category, flags), as loaded
 
     # ---- loading -----------------------------------------------------------
     @classmethod
@@ -82,7 +83,24 @@ class Blocklist:
     def allow(self, word: str) -> None:
         self._allow.add("".join(fold.atoms(word)))
 
+    def entries(self) -> list[tuple[str, int, str]]:
+        """Every loaded word as (word, tier, category), for a settings window."""
+        return [(form, tier, cat) for form, tier, cat, _ in self._entries]
+
+    def filtered(self, off_tiers=(), off_words=()) -> "Blocklist":
+        """A copy without the switched-off groups and words. A streamer's own words ("custom") ignore the groups."""
+        off_t, off_w = set(off_tiers), set(off_words)
+        bl = Blocklist()
+        bl._allow, bl._allow_phrases = self._allow, self._allow_phrases
+        for form, tier, cat, flags in self._entries:
+            if form in off_w or (tier in off_t and cat != "custom"):
+                continue
+            bl._add_form(form, tier, cat, flags)
+        bl._compile()
+        return bl
+
     def _add_form(self, form: str, tier: int, cat: str, flags: str) -> None:
+        self._entries.append((form, tier, cat, flags))
         if "r" in flags:
             self._raw.append((form, tier, cat))
             return

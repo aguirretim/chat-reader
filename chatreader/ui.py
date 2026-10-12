@@ -14,6 +14,7 @@ from .config import APP_NAME, VERSION, AppConfig
 from .controller import Controller
 from .hotkeys import DEFAULT_KEYS, Hotkeys
 from .tts import VOICES
+from .wordlist import WordListWindow
 
 MAX_LOG_ROWS = 200
 DEFAULT_SPEAKER = "Windows default"
@@ -108,10 +109,9 @@ class App:
         opts = ttk.Frame(self.root)
         opts.pack(fill="x", **pad)
         self.say_names = tk.BooleanVar(value=self.cfg.say_names)
-        self.block_mild = tk.BooleanVar(value=self.cfg.block_mild_swearing)
         self.skip_bots = tk.BooleanVar(value=self.cfg.skip_bots)
         ttk.Checkbutton(opts, text="Say who wrote it", variable=self.say_names, command=self._save).pack(side="left")
-        ttk.Checkbutton(opts, text="Also block mild swearing", variable=self.block_mild, command=self._save).pack(side="left", padx=12)
+        ttk.Button(opts, text="Blocked words...", command=self.open_blocked_words).pack(side="left", padx=12)
         ttk.Checkbutton(opts, text="Skip bots", variable=self.skip_bots, command=self._save).pack(side="left")
         self.low_memory = tk.BooleanVar(value=self.cfg.low_memory)
         ttk.Checkbutton(opts, text="Use less memory (slower, from next start)", variable=self.low_memory, command=self._save).pack(side="left", padx=12)
@@ -153,7 +153,6 @@ class App:
         self.cfg.volume = int(float(self.volume.get()))
         self.cfg.speed = round(float(self.speed.get()), 2)
         self.cfg.say_names = self.say_names.get()
-        self.cfg.block_mild_swearing = self.block_mild.get()
         self.cfg.skip_bots = self.skip_bots.get()
         self.cfg.low_memory = self.low_memory.get()
         self.ctl.apply_config()
@@ -163,6 +162,16 @@ class App:
             self.cfg.save()
         except OSError:
             pass  # a read-only profile must not stop the app; settings just will not persist
+
+    def open_blocked_words(self) -> None:
+        if getattr(self, "_words_win", None) is not None and self._words_win.win.winfo_exists():
+            self._words_win.win.lift()
+            return
+        entries = self.ctl.blocked_words()
+        if entries is None:
+            self.status.set("The word list is still loading. Try again in a few seconds.")
+            return
+        self._words_win = WordListWindow(self.root, self.cfg, entries, self._save)
 
     # -- events from the controller ------------------------------------------------
     def _audio_ready(self, names: list[str], error: str) -> None:

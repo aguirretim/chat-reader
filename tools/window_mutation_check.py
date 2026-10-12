@@ -35,6 +35,9 @@ MUTATIONS = [
             'self.keys_line = tk.Label(card, text=vm.shortcuts_text(KEYS), font=k.tiny, bg=p["card"], fg=p["muted"], anchor="w", '
             'wraplength=k.px(330), justify="left")'),
     ], "M3 minimum size, warning line and 3 bots"),
+    ("M3d", "the list of added bots shows 5 names at every window height", [
+        (U, "shown = min(len(names), 2 if self._short else 5)", "shown = min(len(names), 5)"),
+    ], "M3 minimum size: the theme choice"),
     ("M4a", "no inner ring on a focused purple button", [
         (W, 'if ring and self.variant in ("primary", "chosen"):', "if False:"),
     ], "M4 focus on the purple"),

@@ -149,6 +149,10 @@ def caption_icon_purple(window) -> int:
     hwnd = user32.GetParent(window.winfo_id()) or window.winfo_id()
     rect = wt.RECT()
     user32.GetWindowRect(wt.HWND(hwnd), ctypes.byref(rect))
+    user32.WindowFromPoint.restype = wt.HWND
+    user32.WindowFromPoint.argtypes = [wt.POINT]
+    if user32.WindowFromPoint(wt.POINT(rect.left + 20, rect.top + 15)) != hwnd:
+        return -1                       # another window is on top of the corner: a screen grab would show that one
     img = ImageGrab.grab(bbox=(rect.left + 8, rect.top + 2, rect.left + 44, rect.top + 30), all_screens=True).convert("RGB")
     if SHOTS is not None:
         SHOTS.mkdir(parents=True, exist_ok=True)
@@ -203,7 +207,11 @@ def clipped(widget) -> list[str]:
         w = stack.pop()
         if not w.winfo_ismapped():
             continue
-        stack.extend(c for c in w.winfo_children() if not isinstance(c, tk.Toplevel))
+        kids = [c for c in w.winfo_children() if not isinstance(c, tk.Toplevel)]
+        stack.extend(kids)
+        # pack() silently leaves out a control there is no room for: it is then managed but not on screen
+        out.extend(f"{type(c).__name__} {str(c).rsplit('.', 1)[-1]} is not shown at all (no room)"
+                   for c in kids if c.winfo_manager() in ("pack", "grid") and not c.winfo_ismapped())
         m = w.master
         if w is not top and m is not None and not isinstance(w, tk.Toplevel):
             over_x = w.winfo_rootx() + w.winfo_width() - (m.winfo_rootx() + m.winfo_width())
@@ -257,6 +265,9 @@ def main() -> int:
     ctl = FakeController(cfg)
     app = ui.App(cfg, controller=ctl, start=False)
     root = app.root
+    root.update()
+    global OPENED, OPENED_AT
+    OPENED, OPENED_AT = (root.winfo_width(), root.winfo_rooty() + root.winfo_height()), (root.winfo_rootx() + 50, root.winfo_rooty() + 50)
     root.geometry(f"{app.kit.px(920)}x{app.kit.px(BASE_H)}{POS}")
     if FOREGROUND:
         user32.SetForegroundWindow(FOREGROUND)      # hand the keyboard back to whatever had it
@@ -305,7 +316,10 @@ def main() -> int:
     check("placeholder shown in the empty channel box, in the readable grey", app.hint.winfo_ismapped() and app.hint.cget("fg") == k.p["muted"])
     check("M8 the icon file is in the package", bool(ui.icon_file()))
     purple = caption_icon_purple(root)
-    check("M8 the caption shows the app icon (purple pixels where the icon is)", purple >= 20, f"{purple} purple pixels")
+    if purple < 0:
+        print("note M8 caption icon NOT CHECKED in this run: another window covers that corner of the test window")
+    else:
+        check("M8 the caption shows the app icon (purple pixels where the icon is)", purple >= 20, f"{purple} purple pixels")
     app._set_channel_text("demo_channel")
     pump(app)
     check("channel typed: the state line says only Press Start reading", app.state_detail.cget("text") == "Press Start reading.")
@@ -562,8 +576,8 @@ def main() -> int:
     app.failed_keys = ["Ctrl+Alt+F9", "Ctrl+Alt+F10", "Ctrl+Alt+F11", "Ctrl+Alt+F12"]
     app._show_failed_keys()
     pump(app, 0.15)
-    check("the list of added bots starts at the first name and shows all three",
-          app.bots.offset == 0 and not app.bots.pinned and len(app.bots.rows) == 3 and app.bots._max_offset() == 0)
+    check("the list of added bots starts at the first name; three names scroll with a thumb at the minimum size",
+          app.bots.offset == 0 and not app.bots.pinned and len(app.bots.rows) == 3 and app.bots._max_offset() > 0 and bool(app.bots.bar.find_all()))
     cfg.extra_bots = cfg.extra_bots + ["helper_bot_four", "helper_bot_five"]
     app._render_bots()
     pump(app, 0.15)
@@ -573,6 +587,33 @@ def main() -> int:
     pump(app, 0.15)
     chosen = app.colours.buttons["system"]
     low_edge = chosen.winfo_rooty() + chosen.winfo_height()
+
+    def theme_choice_whole() -> bool:
+        footer = app.keys_line.winfo_rooty()
+        return all(b.winfo_ismapped() and b.winfo_viewable() and b.winfo_height() >= k.px(36) and b.face.winfo_ismapped()
+                   and b.winfo_rooty() + b.winfo_height() <= footer and b.winfo_rootx() + b.winfo_width() <= root.winfo_rootx() + root.winfo_width()
+                   for b in app.colours.buttons.values())
+
+    missing = []
+    for count in (0, 3, 10):
+        for warn in (False, True):
+            cfg.extra_bots = [f"helper_bot_{i}" for i in range(count)]
+            app.failed_keys = ["Ctrl+Alt+F9", "Ctrl+Alt+F10", "Ctrl+Alt+F11", "Ctrl+Alt+F12"] if warn else []
+            app._render_bots()
+            app._show_failed_keys()
+            pump(app, 0.15)
+            if not theme_choice_whole() or clipped(root):
+                b = app.colours.buttons["system"]
+                missing.append(f"{count} bots{' + warning' if warn else ''}: {clipped(root)[:2]} mapped {b.winfo_ismapped()} h {b.winfo_height()} "
+                               f"bottom {b.winfo_rooty() + b.winfo_height()} footer {app.keys_line.winfo_rooty()}")
+            if count == 10 and warn:
+                shot(root, "dark_18c_min_settings_warning_10_bots")
+    check("M3 minimum size: the theme choice is on screen and whole with 0, 3 and 10 bots, with and without the warning", not missing, "; ".join(missing))
+    cfg.extra_bots = ["helper_bot_one", "helper_bot_two", "helper_bot_three"]
+    app.failed_keys = ["Ctrl+Alt+F9", "Ctrl+Alt+F10", "Ctrl+Alt+F11", "Ctrl+Alt+F12"]
+    app._render_bots()
+    app._show_failed_keys()
+    pump(app, 0.15)
     check("M3 minimum size, warning line and 3 bots: nothing clipped on Settings", not clipped(root), ", ".join(clipped(root)))
     check("M3 minimum size, warning line and 3 bots: the theme choice is whole and above the footer",
           low_edge <= app.licence_line.winfo_rooty() and chosen.winfo_rootx() + chosen.winfo_width() <= root.winfo_rootx() + root.winfo_width(),
@@ -589,6 +630,7 @@ def main() -> int:
     shot(root, "dark_18_min_settings")
     app.toggle_settings()
     fit = theme.fitted_size(k.px(920), k.px(600), (1024, 560))
+    check("the window opened at a size that fits the monitor it is on", OPENED[1] <= theme.monitor_work_area(*OPENED_AT)[3], f"{OPENED} in {theme.monitor_work_area(*OPENED_AT)}")
     check("opens inside a 1024x600 screen (560 work area)", fit[0] + 16 <= 1024 and fit[1] + 39 <= 560, str(fit))
     root.geometry(f"{fit[0]}x{fit[1]}{POS}")
     pump(app, 0.15)

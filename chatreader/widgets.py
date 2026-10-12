@@ -455,8 +455,8 @@ class ListView(tk.Frame):
         self._fit_cache: dict = {}
         self.canvas = tk.Canvas(self, bd=0, highlightthickness=0, bg=p["card"], takefocus=1)
         self.bar = ScrollBar(self, kit, lambda share: self._scroll_to(share * len(self.rows) * self.rh))
+        self.bar.pack(side="right", fill="y")          # first: in a narrow list the canvas would leave it no room
         self.canvas.pack(side="left", fill="both", expand=True)
-        self.bar.pack(side="right", fill="y")
         c = self.canvas
         c.bind("<Configure>", self._resized)
         c.bind("<MouseWheel>", self._wheel)

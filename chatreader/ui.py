@@ -27,8 +27,9 @@ DEFAULT_SPEAKER = "Windows default"
 DEFAULT_SIZE = (920, 600)
 MIN_SIZE = (720, 480)
 NARROW_BELOW = 840
-SHORT_BELOW = 560           # below this height the list of added bots shows 3 names instead of 5
-BOT_ROW = 24
+SHORT_BELOW = 560           # below this height the list of added bots shows 2 names instead of 5; a third row pushes
+                            # the theme choice off the page at the minimum size (the list scrolls instead)
+BOT_ROW = 23
 KEYS = {name: label for name, (_, label) in DEFAULT_KEYS.items()}
 TIPS = {
     "pause": "Stops speaking. New messages wait and are read when you press Resume.",
@@ -132,9 +133,14 @@ class App:
         self._built = False
         self._build()
         k = self.kit
-        want = theme.fitted_size(k.px(DEFAULT_SIZE[0]), k.px(DEFAULT_SIZE[1]), theme.work_area())
         place = os.environ.get("CR_WINDOW_POS", "")        # "+x+y", for the scripted checks: open on a chosen monitor
-        self.root.geometry(f"{want[0]}x{want[1]}{place if re.fullmatch(r'[+-]\d+[+-]\d+', place) else ''}")
+        at = re.fullmatch(r"([+-]\d+)([+-]\d+)", place)
+        area = theme.work_area()
+        if at:                                              # fit the monitor it opens on, not the primary one
+            left, top, right, bottom = theme.monitor_work_area(int(at[1]) + 50, int(at[2]) + 50)
+            area = (right - left, bottom - max(top, int(at[2])) + 16)
+        want = theme.fitted_size(k.px(DEFAULT_SIZE[0]), k.px(DEFAULT_SIZE[1]), area)
+        self.root.geometry(f"{want[0]}x{want[1]}{place if at else ''}")
         self.root.minsize(k.px(MIN_SIZE[0]), k.px(MIN_SIZE[1]))
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
         for key in ("<Control-l>", "<Control-L>"):          # with Caps Lock on, Tk reports the capital letter
@@ -319,7 +325,7 @@ class App:
         # for the shortcut warning, pushed the theme choice out of sight at the smallest size; the warning now takes
         # the place of the licence line (which is also in the README and LICENSE).
         self.keys_line = tk.Label(card, text=vm.shortcuts_text(KEYS), font=k.tiny, bg=p["card"], fg=p["muted"], anchor="w")
-        tk.Frame(card, bg=p["card"], height=k.px(6)).pack(side="bottom")
+        tk.Frame(card, bg=p["card"], height=k.px(4)).pack(side="bottom")
         self.licence_line = tk.Label(card, text=vm.licence_text(VERSION), font=k.tiny, bg=p["card"], fg=p["muted"], anchor="w")
         self.licence_line.pack(side="bottom", fill="x", padx=k.px(16))
         self.keys_line.pack(side="bottom", fill="x", padx=k.px(16), pady=(k.px(2), 0))
@@ -409,7 +415,7 @@ class App:
         self.bots.on_activate = lambda i: None
         self.bots_empty = hint(right, "None yet. Add a name here, or right-click a message in the list.")
         self.bots_empty.configure(wraplength=k.px(270))
-        r = line(right, 4)
+        r = line(right, 1)
         self.words_btn = Button(r, k, "Blocked words...", self.open_blocked_words)
         self.words_btn.pack(side="left")
         self.groups_lbl = tk.Label(r, text=vm.groups_on(self.cfg), font=k.small, bg=p["card"], fg=p["muted"])
@@ -549,7 +555,7 @@ class App:
     # -- bots the streamer added ---------------------------------------------------
     def _render_bots(self) -> None:
         names = self.cfg.extra_bots
-        shown = min(len(names), 3 if self._short else 5)       # more names than this scroll
+        shown = min(len(names), 2 if self._short else 5)       # more names than this scroll
         self.bots.configure(height=self.kit.px(BOT_ROW * shown + 2))
         self.bots.set_rows([{"cells": {"name": n, "remove": "Remove"}, "tone": "text"} for n in names])
         if names:

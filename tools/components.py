@@ -52,19 +52,20 @@ def closure(names):
     return seen
 
 
-rows = [(d.metadata["Name"], d.version, licence_of(d)) for d in closure(RUNTIME).values()]
-rows += [(name, "", lic + "  (" + src + ")") for name, lic, src in NOT_FROM_PIP]
-copyleft = [r for r in rows if "GPL" in r[2].upper() or "GNU" in r[2].upper()]
-other = [r for r in rows if r not in copyleft]
-lines = [
-    "Third-party components inside this build of Chat Reader",
-    "Licences are as declared by each package's own metadata on the build PC; they were not legally reviewed.",
-    "",
-    "GPL / LGPL components (these affect how the whole program may be distributed):",
-]
-lines += [f"  {n} {v}: {lic}".replace("  :", ":") for n, v, lic in sorted(copyleft, key=lambda r: r[0].lower())]
-lines += ["", "Other components:"]
-lines += [f"  {n} {v}: {lic}" for n, v, lic in sorted(other, key=lambda r: r[0].lower())]
-lines += ["", "The licence of Chat Reader itself has not been chosen. That decision is the author's, before any copy is given to someone else."]
-open(sys.argv[1], "w", encoding="utf-8").write("\n".join(lines) + "\n")
-print(f"{len(rows)} components listed, {len(copyleft)} GPL/LGPL")
+if __name__ == "__main__":
+    rows = [(d.metadata["Name"], d.version, licence_of(d)) for d in closure(RUNTIME).values()]
+    rows += [(name, "", lic + "  (" + src + ")") for name, lic, src in NOT_FROM_PIP]
+    copyleft = [r for r in rows if "GPL" in r[2].upper() or "GNU" in r[2].upper()]
+    other = [r for r in rows if r not in copyleft]
+    lines = [
+        "Third-party components inside this build of Chat Reader",
+        "Licences are as declared by each package's own metadata on the build PC; they were not legally reviewed.",
+        "",
+        "GPL / LGPL components (these affect how the whole program may be distributed):",
+    ]
+    lines += [f"  {n} {v}: {lic}".replace("  :", ":") for n, v, lic in sorted(copyleft, key=lambda r: r[0].lower())]
+    lines += ["", "Other components:"]
+    lines += [f"  {n} {v}: {lic}" for n, v, lic in sorted(other, key=lambda r: r[0].lower())]
+    lines += ["", "The licence of Chat Reader itself has not been chosen. That decision is the author's, before any copy is given to someone else."]
+    open(sys.argv[1], "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    print(f"{len(rows)} components listed, {len(copyleft)} GPL/LGPL")

@@ -1,0 +1,21 @@
+Where the source code of the GPL and LGPL components in this build is published
+(the exact versions shipped; each address was checked on 2026-10-11)
+
+espeak-ng 1.52.0, GPL-3.0-or-later (the file espeak-ng.dll and the espeak-ng-data folder)
+  https://github.com/espeak-ng/espeak-ng/releases/tag/1.52.0
+  It is shipped as built by the espeakng-loader package, version 0.2.4 (MIT):
+  https://github.com/thewh1teagle/espeakng-loader
+
+phonemizer 3.4.0, GPL-3.0-or-later
+  https://files.pythonhosted.org/packages/bc/7d/5a96ddb130552f6365a090b5fd12ace803a95a858e3f67258f2ad13dc51f/phonemizer-3.4.0.tar.gz
+  https://github.com/bootphon/phonemizer
+
+pystray 0.19.5, LGPL-3.0
+  https://github.com/moses-palmer/pystray/tree/v0.19.5
+
+PyInstaller bootloader (the start-up part of ChatReader.exe), GPL-2.0-or-later with an exception
+that allows the bundled program to carry any licence
+  https://github.com/pyinstaller/pyinstaller
+
+The full licence texts are in this folder: GPL-3.0.txt, LGPL-3.0.txt and the files under packages\.
+This file lists facts about the bundled components. It does not state a licence for Chat Reader itself.

@@ -59,7 +59,10 @@ Move-Item "$app\build\pyi-dist\ChatReader" $out
 New-Item -ItemType Directory "$out\models" | Out-Null
 Copy-Item "$app\models\kokoro-v1.0.int8.onnx", "$app\models\voices-v1.0.bin" "$out\models\"
 Copy-Item "$app\third_party_licenses" "$out\licenses" -Recurse
+[IO.Directory]::Delete("$out\licenses\texts", $true)   # the canonical texts are copied below under their final names
 & $py "$app\tools\components.py" "$out\licenses\COMPONENTS.txt"
+& $py "$app\tools\collect_licenses.py" "$out\licenses"
+if ($LASTEXITCODE -ne 0) { throw "a licence text is missing (collect_licenses.py)" }
 Copy-Item "$app\README.txt" $out
 
 Compress-Archive -Path $out -DestinationPath "$app\dist\ChatReader.zip" -CompressionLevel Optimal

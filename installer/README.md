@@ -30,3 +30,7 @@ donations included) to buy a licence. See https://jrsoftware.org/isorder.php
 
 - `AppId` in `chatreader.iss`. Windows uses it to find the older copy when installing over it.
 - The install is per-user on purpose. A machine-wide install would need an administrator prompt.
+## Before giving the installer to anyone
+
+The build contains GPL-3.0 components (espeak-ng, phonemizer). No licence has been chosen for Chat Reader itself.
+Until its author decides, the installer and the zip are for his own PC only.

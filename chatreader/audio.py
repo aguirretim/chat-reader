@@ -87,6 +87,18 @@ def _restart_portaudio() -> None:
         pass
 
 
+def shape_samples(samples, volume: int):
+    """Apply the volume, then hold every sample inside -1..1.
+
+    The voice sometimes overshoots full scale (8 of 179 benchmark files did). Sent to the sound card
+    as it is, an overshoot distorts; held at the limit it is at worst a slightly flat peak.
+    """
+    import numpy as np
+
+    data = np.asarray(samples, dtype=np.float32) * (max(0, min(100, volume)) / 100.0)
+    return np.clip(data, -1.0, 1.0)
+
+
 def play(samples, rate: int, device_name: str, volume: int, stop: threading.Event) -> str:
     """Play and return the name of the device used. Returns early when `stop` is set."""
     wait_ready()
@@ -95,7 +107,7 @@ def play(samples, rate: int, device_name: str, volume: int, stop: threading.Even
     import numpy as np
 
     null_audio = os.environ.get("CR_NULL_AUDIO") == "1"
-    data = samples * (max(0, min(100, volume)) / 100.0)
+    data = shape_samples(samples, volume)
     try:
         stream = _open(rate, device_name)
     except Exception:

@@ -21,6 +21,7 @@ MUTATIONS = [
      "self.queue.put(Item(text=text, raw=text, name=\"Test\"))", "test_test_voice_can_be_pressed_again"),
     ("chatreader/controller.py", "        self._interrupt(reason)\n\n    def set_paused", "\n    def set_paused", "test_stop_reading_cuts_the_current_message"),
     ("chatreader/controller.py", "            strip_markdown_links(event)\n", "", "test_markdown_link_is_read_as_its_text_only"),
+    ("chatreader/audio.py", "    return np.clip(data, -1.0, 1.0)", "    return data", "test_samples_above_full_scale_are_held_at_the_limit"),
     ("chatreader/controller.py", "text=cut_at_word(decision.text, self.cfg.max_chars)", "text=decision.text", "test_spoken_text_is_cut_at_the_character_cap"),
     ("chatreader/controller.py", "            self.ctx.last_speaker = \"\"      # too long ago: say the name again", "            pass",
      "test_name_is_dropped_for_a_quick_follow_up_and_said_again_later"),

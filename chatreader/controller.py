@@ -6,6 +6,7 @@ fake voice, a fake speaker and hand-made chat lines: no network, no sound.
 from __future__ import annotations
 
 import queue
+import re
 import threading
 import time
 from collections import deque
@@ -27,6 +28,26 @@ REASONS = {
     "user_timed_out": "writer was timed out or banned", "cleared": "cleared by you", "skipped": "skipped by you",
     "stopped": "you stopped reading",
 }
+
+
+_MD_LINK = re.compile(r"\[([^\]\[]*)\]\([^)\s]*\)")   # [shown text](address) -> shown text
+
+
+def strip_markdown_links(event: dict) -> None:
+    """Chat does not render [text](address), but a voice would read the address out. Keep only the shown text."""
+    msg = event.get("message") or {}
+    if "](" in (msg.get("text") or ""):
+        msg["text"] = _MD_LINK.sub(r"\1", msg["text"])
+        for frag in msg.get("fragments") or []:
+            if frag.get("type", "text") == "text":
+                frag["text"] = _MD_LINK.sub(r"\1", frag.get("text", ""))
+
+
+def cut_at_word(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    return (cut[: cut.rfind(" ")] if " " in cut[limit // 2:] else cut).rstrip(" ,;:")
 
 
 def friendly_reason(reason: str) -> str:
@@ -62,6 +83,7 @@ class Controller:
         self._deleted_ids: deque[str] = deque(maxlen=500)
         self._removed_users: dict[str, float] = {}
         self._cleared_at = 0.0
+        self._last_speaker_at = 0.0
         self.apply_config()
 
     # -- life cycle -------------------------------------------------------------
@@ -165,7 +187,11 @@ class Controller:
         login = event.get("chatter_user_login", "")
         name = event.get("chatter_user_name") or login
         raw = (event.get("message") or {}).get("text", "")
+        now = time.time()
+        if self.ctx.last_speaker and now - self._last_speaker_at > self.cfg.name_window_s:
+            self.ctx.last_speaker = ""      # too long ago: say the name again
         try:
+            strip_markdown_links(event)
             decision = self._cleaner.prepare(event, self.ctx)
         except Exception as exc:  # one odd message must never stop the reader
             self._log(name, "", "skipped", f"could not be read ({type(exc).__name__})")
@@ -174,9 +200,11 @@ class Controller:
             hidden = decision.reason.startswith(("blocked", "personal"))
             self._log(name, "" if hidden else raw, "skipped", friendly_reason(decision.reason))
             return
-        item = Item(text=decision.text, login=login, message_id=event.get("message_id", ""), raw=raw, name=name)
+        item = Item(text=cut_at_word(decision.text, self.cfg.max_chars), login=login,
+                    message_id=event.get("message_id", ""), raw=raw, name=name)
         if self.queue.put(item):
             self.ctx.last_speaker = login
+            self._last_speaker_at = now
 
     def _on_drop(self, item: Item, reason: str) -> None:
         if item.login and self.ctx.last_speaker == item.login:
@@ -209,6 +237,11 @@ class Controller:
         self._interrupt("skipped")
 
     def clear(self) -> None:
+        self._clear("cleared")
+
+    def panic(self) -> None:
+        """Silence now and stay silent: forget everything waiting and pause until the user resumes."""
+        self.set_paused(True)
         self._clear("cleared")
 
     def test_voice(self, text: str = "This is how I will read your chat.") -> None:

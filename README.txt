@@ -9,9 +9,10 @@ HOW TO USE
   3. Type a channel name (or paste its twitch.tv link) and press Start reading.
 
   Test voice       says one sentence so you can set the volume and pick the speaker.
-  Ctrl+Alt+F10     pause / resume
+  Ctrl+Alt+F9      stop everything and stay silent until you press Resume
+  Ctrl+Alt+F10     mute / resume (messages wait up to 20 seconds)
   Ctrl+Alt+F11     skip the message being read
-  Ctrl+Alt+F12     stop and clear everything waiting
+  Ctrl+Alt+F12     clear everything waiting
   The icon near the clock has the same controls. Closing the window quits.
 
 WHAT IT DOES NOT READ
@@ -24,7 +25,7 @@ PRIVACY
   Messages are shown in the window only; they are not saved or sent anywhere.
   To leave emotes out, the app asks 7TV, BetterTTV and FrankerFaceZ for the
   channel's emote names (only the channel's id is sent).
-  Settings are kept in %LOCALAPPDATA%\ChatReader\settings.json.
+  Settings are kept in %APPDATA%\ChatReader\settings.json (a plain text file).
 
 IF WINDOWS OR YOUR ANTIVIRUS WARNS
   This test build is not signed. Windows may say "Windows protected your PC":
@@ -32,7 +33,8 @@ IF WINDOWS OR YOUR ANTIVIRUS WARNS
   needs the files next to it.
 
 LICENCES
+  This is a private test build. It has not been released under any licence yet.
   The voice is Kokoro-82M v1.0 (Apache-2.0), run with ONNX Runtime (MIT) through
-  kokoro-onnx (MIT). Pronunciation uses espeak-ng and phonemizer (GPL-3.0), so
-  this program as a whole is distributed under GPL-3.0-or-later. Word lists used
-  by the safety filter have their licences in the "licenses" folder.
+  kokoro-onnx (MIT). Pronunciation uses espeak-ng and phonemizer, which are
+  GPL-3.0; that matters before a copy is given to anyone else. Every bundled
+  component and its licence is listed in licenses\COMPONENTS.txt.

@@ -15,7 +15,7 @@ python -m venv .venv
 ## Test, build, check
 
 ```
-.venv\Scripts\python -m pytest -q            # 56 tests, no network, no sound
+.venv\Scripts\python -m pytest -q            # 61 tests, no network, no sound
 .venv\Scripts\python tools\mutation_check.py # breaks each fix in turn; its test must go red
 .venv\Scripts\python tools\audio_check.py    # opens every speaker with silence
 .\build.ps1                                  # dist\ChatReader\ChatReader.exe and dist\ChatReader.zip
@@ -34,8 +34,10 @@ python -m venv .venv
 
 Test switches (environment): `CR_NULL_AUDIO=1` silence instead of speech, `CR_START_MINIMIZED=1`,
 `CR_AUTOCONNECT=<channel>`, `CR_AUTOTEST=1`, `CR_TIMING_LOG=<file>` (marks and counts only, never chat text),
-`CR_DATA_DIR=<folder>` (settings somewhere other than `%LOCALAPPDATA%\ChatReader`).
+`CR_DATA_DIR=<folder>` (settings somewhere other than `%APPDATA%\ChatReader`).
 
 ## Licence
 
-GPL-3.0-or-later, because the bundle includes espeak-ng and phonemizer (both GPL-3.0). Kokoro weights are Apache-2.0.
+Not chosen yet. The build contains GPL-3.0 components (espeak-ng, phonemizer) and one LGPL-3.0 component (pystray),
+which constrain the choice once a copy is given to anyone else. `tools\components.py` writes the full list into
+`dist\ChatReader\licenses\COMPONENTS.txt` at build time. Kokoro weights are Apache-2.0.

@@ -13,7 +13,7 @@ VERSION = "0.1.0"
 
 
 def data_dir() -> Path:
-    base = os.environ.get("CR_DATA_DIR") or os.path.join(os.environ.get("LOCALAPPDATA") or str(Path.home()), APP_ID)
+    base = os.environ.get("CR_DATA_DIR") or os.path.join(os.environ.get("APPDATA") or str(Path.home()), APP_ID)
     path = Path(base)
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -41,8 +41,10 @@ class AppConfig:
     block_mild_swearing: bool = False
     skip_bots: bool = True
     max_words: int = 40
+    max_chars: int = 150           # spoken text is cut at a word boundary after this many characters
     max_pending: int = 6
-    max_age_s: int = 30
+    max_age_s: int = 20
+    name_window_s: int = 30        # "Name says" is dropped when the same person writes again within this time
     fetch_emote_lists: bool = True  # asks 7TV / BetterTTV / FrankerFaceZ for the channel's emote names
     hotkeys: bool = True
     low_memory: bool = False       # voice engine arena off: about 170 MB instead of up to 690 MB, about twice the wait
@@ -78,6 +80,8 @@ class AppConfig:
         cfg.max_words = min(200, max(5, cfg.max_words))
         cfg.max_pending = min(50, max(1, cfg.max_pending))
         cfg.max_age_s = min(600, max(5, cfg.max_age_s))
+        cfg.max_chars = min(1000, max(20, cfg.max_chars))
+        cfg.name_window_s = min(600, max(0, cfg.name_window_s))
         return cfg
 
     def save(self) -> None:

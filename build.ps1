@@ -6,6 +6,10 @@ $py  = "$app\.venv\Scripts\python.exe"
 $out = "$app\dist\ChatReader"
 $sw  = [Diagnostics.Stopwatch]::StartNew()
 
+# Never replace the folder under a running copy: on 2026-10-11 a rebuild deleted 1,370 files out from under
+# the app while it was in use (the locked exe and DLLs survived; the rest had to be restored from the zip).
+$inUse = Get-Process -Name ChatReader -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith("$app\dist\") }
+if ($inUse) { throw "Chat Reader is running from dist\ (process $($inUse.Id -join ', ')). Close it, then build again." }
 if (Test-Path $out) { [IO.Directory]::Delete($out, $true) }
 if (Test-Path "$app\dist\ChatReader.zip") { [IO.File]::Delete("$app\dist\ChatReader.zip") }
 New-Item -ItemType Directory -Force "$app\build", "$app\dist" | Out-Null
@@ -47,6 +51,7 @@ Move-Item "$app\build\pyi-dist\ChatReader" $out
 New-Item -ItemType Directory "$out\models" | Out-Null
 Copy-Item "$app\models\kokoro-v1.0.int8.onnx", "$app\models\voices-v1.0.bin" "$out\models\"
 Copy-Item "$app\third_party_licenses" "$out\licenses" -Recurse
+& $py "$app\tools\components.py" "$out\licenses\COMPONENTS.txt"
 Copy-Item "$app\README.txt" $out
 
 Compress-Archive -Path $out -DestinationPath "$app\dist\ChatReader.zip" -CompressionLevel Optimal

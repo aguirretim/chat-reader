@@ -13,7 +13,8 @@ MOD_ALT, MOD_CONTROL, MOD_NOREPEAT = 0x0001, 0x0002, 0x4000
 WM_HOTKEY, WM_QUIT = 0x0312, 0x0012
 # name -> (virtual key, label)
 DEFAULT_KEYS = {
-    "pause": (0x79, "Ctrl+Alt+F10"),   # pause / resume
+    "panic": (0x78, "Ctrl+Alt+F9"),    # silence now and stay silent until Resume
+    "pause": (0x79, "Ctrl+Alt+F10"),   # mute (pause) / resume: messages wait, nothing is spoken
     "skip": (0x7A, "Ctrl+Alt+F11"),    # skip the message being spoken
     "clear": (0x7B, "Ctrl+Alt+F12"),   # stop and forget everything waiting
 }

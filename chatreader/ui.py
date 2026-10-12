@@ -34,7 +34,7 @@ class App:
         self.ctl = controller or Controller(cfg)
         self.root = tk.Tk()
         self.root.title(APP_NAME)
-        self.root.geometry("760x560")
+        self.root.geometry("860x560")
         self.root.minsize(620, 440)
         if os.environ.get("CR_START_MINIMIZED") == "1":
             self.root.iconify()
@@ -119,10 +119,11 @@ class App:
         keys = {name: label for name, (_, label) in DEFAULT_KEYS.items()}
         ctl = ttk.Frame(self.root)
         ctl.pack(fill="x", **pad)
-        self.pause_btn = ttk.Button(ctl, text=f"Pause ({keys['pause']})", command=self.ctl.toggle_pause, width=26)
+        self.pause_btn = ttk.Button(ctl, text=f"Mute ({keys['pause']})", command=self.ctl.toggle_pause, width=22)
         self.pause_btn.pack(side="left")
         ttk.Button(ctl, text=f"Skip this one ({keys['skip']})", command=self.ctl.skip).pack(side="left", padx=6)
         ttk.Button(ctl, text=f"Clear all waiting ({keys['clear']})", command=self.ctl.clear).pack(side="left")
+        ttk.Button(ctl, text=f"Stop everything ({keys['panic']})", command=self.ctl.panic).pack(side="left", padx=6)
         self.counts = tk.StringVar(value="")
         ttk.Label(ctl, textvariable=self.counts).pack(side="right")
 
@@ -211,7 +212,7 @@ class App:
                         mark("reading_chat")
                 elif kind == "paused":
                     label = DEFAULT_KEYS["pause"][1]
-                    self.pause_btn.config(text=f"Resume ({label})" if data else f"Pause ({label})")
+                    self.pause_btn.config(text=f"Resume ({label})" if data else f"Mute ({label})")
                 elif kind == "log":
                     self._add_log(data)
         except queue.Empty:
@@ -254,7 +255,7 @@ class App:
 
     def _on_hotkey(self, name: str) -> None:
         mark("hotkey", key=name)
-        {"pause": self.ctl.toggle_pause, "skip": self.ctl.skip, "clear": self.ctl.clear}[name]()
+        {"pause": self.ctl.toggle_pause, "skip": self.ctl.skip, "clear": self.ctl.clear, "panic": self.ctl.panic}[name]()
 
     def show(self) -> None:
         self.root.after(0, lambda: (self.root.deiconify(), self.root.lift()))

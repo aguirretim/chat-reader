@@ -374,3 +374,64 @@ def test_guards_for_a_message_already_taken_from_the_line(ctl):
     ctl._removed_users.clear()
     ctl._cleared_at = now + 1
     assert ctl._blocked_before_speaking(msg) == "cleared"
+
+
+# -- added for the lead's design inputs -----------------------------------------------------------
+
+def test_markdown_link_is_read_as_its_text_only(ctl):
+    ctl.connect("streamer")
+    ctl.handle_message(event("look at [this cool thing](https://example.com/x) now", mid="1"))
+    ctl.handle_message(event("see [the docs](docs/readme.md) and [click here](javascript:alert) friends", mid="2", login="b", name="B"))
+    logs(ctl, 2)
+    first, second = ctl._engine.said[0][0], ctl._engine.said[1][0]
+    # without the stripping the clean-up step leaves "( now", "(docs/readme.md)" and "(javascript:alert)" for the voice
+    assert first.endswith("look at this cool thing now")
+    assert "the docs" in second and "click here" in second
+    assert "readme" not in second and "javascript" not in second and "(" not in first + second
+
+
+def test_spoken_text_is_cut_at_the_character_cap(ctl):
+    ctl.cfg.max_chars = 60
+    ctl.connect("streamer")
+    ctl.handle_message(event("one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"))
+    logs(ctl, 1)
+    said = ctl._engine.said[-1][0]
+    assert len(said) <= 60 and said == said.strip()
+    assert said.split()[-1] in "one two three four five six seven eight nine ten eleven twelve".split()
+
+
+def test_name_is_dropped_for_a_quick_follow_up_and_said_again_later(ctl):
+    ctl.connect("streamer")
+    ctl.handle_message(event("first thing i wanted to say", mid="1"))
+    ctl.handle_message(event("second thing right after", mid="2"))
+    logs(ctl, 2)
+    assert "says" in ctl._engine.said[0][0] and "says" not in ctl._engine.said[1][0]
+    ctl._last_speaker_at -= ctl.cfg.name_window_s + 1          # as if 31 s had passed
+    ctl.handle_message(event("third thing much later", mid="3"))
+    logs(ctl, 1)
+    assert "says" in ctl._engine.said[2][0]
+
+
+def test_panic_clears_and_stays_silent_until_resume(ctl):
+    cut = []
+    ctl._play = lambda samples, rate, device, volume, stop: cut.append(stop.wait(5))
+    ctl.connect("streamer")
+    ctl.handle_message(event("being spoken right now", mid="1"))
+    time.sleep(0.4)
+    ctl.handle_message(event("waiting in the line", mid="2", login="b", name="B"))
+    ctl.panic()
+    entries = logs(ctl, 2)
+    assert cut == [True] and ctl.paused and len(ctl.queue) == 0
+    assert {e["detail"] for e in entries} == {"cleared by you"}
+    ctl.handle_message(event("arrives while silenced", mid="3", login="c", name="C"))
+    time.sleep(0.5)
+    assert len(ctl._engine.said) == 1 and len(ctl.queue) == 1      # held, not spoken
+
+
+def test_emote_names_match_whole_tokens_and_exact_case(ctl):
+    ctl.connect("streamer")
+    ctl.ctx.third_party_emotes = frozenset({"Clap", "OMEGALUL"})
+    ctl.handle_message(event("please clap for the Clapper Clap OMEGALUL"))
+    logs(ctl, 1)
+    said = ctl._engine.said[-1][0].lower()
+    assert "please clap for the clapper" in said and "omegalul" not in said and not said.rstrip().endswith("clap")

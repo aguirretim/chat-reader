@@ -1,0 +1,11 @@
+.venv/
+build/
+dist/
+logs/
+stranger/
+models/*.onnx
+models/*.bin
+__pycache__/
+.pytest_cache/
+build.log
+

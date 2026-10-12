@@ -1,0 +1,6 @@
+# Extra words and phrases that must never be blocked. One per line; a phrase with spaces is allowed as a unit.
+homo sapiens
+homo erectus
+maine coon
+niger river
+scunthorpe

@@ -1,0 +1,6 @@
+{
+  "_comment": "Optional: emotes that are spoken instead of dropped when 'speak famous emotes' is on. Emote name -> spoken word.",
+  "LUL": "lol", "KEKW": "kek", "Kappa": "kappa", "PogChamp": "pog", "Pog": "pog", "POGGERS": "poggers",
+  "Sadge": "sadge", "monkaS": "monka S", "OMEGALUL": "lol", "catJAM": "cat jam", "Clap": "clap", "GG": "G G",
+  "F": "F", "EZ": "easy", "COPIUM": "copium", "HeyGuys": "hey guys", "BibleThump": "bible thump", "NotLikeThis": "not like this"
+}

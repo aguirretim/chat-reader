@@ -1,0 +1,31 @@
+# Service bot accounts whose messages are not read. One login per line, lower case. Edit freely.
+# The first group was seen carrying Twitch's "bot-badge" in chat captured on 2026-10-11.
+streamelements
+fossabot
+nightbot
+sery_bot
+moobot
+pokemoncommunitygame
+frostytools
+kofistreambot
+# Seen in the same capture without the badge.
+streamlabs
+blerp
+coebot
+# Well-known service accounts, not seen in the capture (names not re-verified).
+wizebot
+soundalerts
+streamstickers
+tangiabot
+own3d
+commanderroot
+lumiastream
+pretzelrocks
+songlistbot
+restreambot
+botrixoficial
+dixperbro
+creatisbot
+buttsbot
+frostytoolsdotcom
+streamholics
